@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Plus, Search, UserCheck, UserX, Clock, CheckCircle, XCircle, Bell } from "lucide-react";
+import { Plus, Search, UserCheck, UserX, Clock, CheckCircle, XCircle, Bell, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
@@ -28,8 +28,17 @@ type PendingAffiliate = {
   signupStatus: string | null;
 };
 
+type OnboardingAnswer = {
+  id: number;
+  affiliateId: number;
+  questionKey: string;
+  question: string;
+  answer: string;
+  createdAt: string;
+};
+
 async function apiFetch(path: string, options?: RequestInit) {
-  const res = await fetch(`/api${path}`, { headers: { "Content-Type": "application/json" }, ...options });
+  const res = await fetch(`/api${path}`, { headers: { "Content-Type": "application/json" }, credentials: "include", ...options });
   if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? "Request failed"); }
   return res.json();
 }
@@ -45,9 +54,37 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+function OnboardingAnswersPanel({ affiliateId, name }: { affiliateId: number; name: string }) {
+  const { data: answers, isLoading } = useQuery<OnboardingAnswer[]>({
+    queryKey: ["onboarding-answers", affiliateId],
+    queryFn: () => apiFetch(`/portal/affiliate-onboarding/${affiliateId}`),
+  });
+
+  if (isLoading) {
+    return <p className="text-[10px] text-muted-foreground px-4 pb-3">Loading answers...</p>;
+  }
+
+  if (!answers?.length) {
+    return <p className="text-[10px] text-muted-foreground px-4 pb-3 italic">No onboarding answers submitted yet.</p>;
+  }
+
+  return (
+    <div className="px-4 pb-3 space-y-2">
+      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{name}'s Onboarding Answers</p>
+      {answers.map(a => (
+        <div key={a.id} className="bg-background border border-border/50 rounded p-2.5">
+          <p className="text-[10px] font-semibold text-primary mb-1">{a.question}</p>
+          <p className="text-xs text-foreground/80">{a.answer}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PendingApprovalPanel() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const [expandedId, setExpandedId] = useState<number | null>(null);
 
   const { data: pending, isLoading } = useQuery<PendingAffiliate[]>({
     queryKey: ["pending-affiliates"],
@@ -57,7 +94,7 @@ function PendingApprovalPanel() {
 
   const approveMutation = useMutation({
     mutationFn: (id: number) => apiFetch(`/portal/approve-affiliate/${id}`, { method: "POST" }),
-    onSuccess: (_, id) => {
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["pending-affiliates"] });
       qc.invalidateQueries({ queryKey: getListAffiliatesQueryKey() });
       toast({ title: "Affiliate approved", description: "They've been notified by email." });
@@ -74,6 +111,16 @@ function PendingApprovalPanel() {
     onError: () => toast({ title: "Error", description: "Could not reject affiliate", variant: "destructive" }),
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => apiFetch(`/affiliates/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pending-affiliates"] });
+      qc.invalidateQueries({ queryKey: getListAffiliatesQueryKey() });
+      toast({ title: "Affiliate deleted" });
+    },
+    onError: () => toast({ title: "Error", description: "Could not delete affiliate", variant: "destructive" }),
+  });
+
   if (isLoading || !pending?.length) return null;
 
   return (
@@ -85,31 +132,52 @@ function PendingApprovalPanel() {
       </div>
       <div className="divide-y divide-amber-500/10">
         {pending.map(a => (
-          <div key={a.id} className="px-4 py-3 flex items-center gap-3">
-            <div className="w-7 h-7 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center flex-shrink-0">
-              <Clock className="w-3.5 h-3.5 text-amber-400" />
+          <div key={a.id}>
+            <div className="px-4 py-3 flex items-center gap-3">
+              <div className="w-7 h-7 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center flex-shrink-0">
+                <Clock className="w-3.5 h-3.5 text-amber-400" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold">{a.name}</p>
+                <p className="text-[10px] text-muted-foreground">{a.email}</p>
+              </div>
+              <span className="text-[10px] text-muted-foreground hidden sm:block">{new Date(a.createdAt).toLocaleDateString()}</span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setExpandedId(expandedId === a.id ? null : a.id)}
+                  className="flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded bg-secondary text-muted-foreground border border-border hover:bg-accent hover:text-foreground transition-colors font-medium"
+                >
+                  {expandedId === a.id ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  Answers
+                </button>
+                <button
+                  onClick={() => approveMutation.mutate(a.id)}
+                  disabled={approveMutation.isPending}
+                  className="flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors font-medium disabled:opacity-50"
+                >
+                  <CheckCircle className="w-3 h-3" /> Approve
+                </button>
+                <button
+                  onClick={() => { if (confirm(`Reject application from ${a.name}?`)) rejectMutation.mutate(a.id); }}
+                  disabled={rejectMutation.isPending}
+                  className="flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded bg-destructive/5 text-destructive border border-destructive/20 hover:bg-destructive/10 transition-colors font-medium disabled:opacity-50"
+                >
+                  <XCircle className="w-3 h-3" /> Reject
+                </button>
+                <button
+                  onClick={() => { if (confirm(`Permanently delete ${a.name}'s account?`)) deleteMutation.mutate(a.id); }}
+                  disabled={deleteMutation.isPending}
+                  className="flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded bg-destructive/5 text-destructive border border-destructive/20 hover:bg-destructive/10 transition-colors font-medium disabled:opacity-50"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold">{a.name}</p>
-              <p className="text-[10px] text-muted-foreground">{a.email}</p>
-            </div>
-            <span className="text-[10px] text-muted-foreground hidden sm:block">{new Date(a.createdAt).toLocaleDateString()}</span>
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => approveMutation.mutate(a.id)}
-                disabled={approveMutation.isPending}
-                className="flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors font-medium disabled:opacity-50"
-              >
-                <CheckCircle className="w-3 h-3" /> Approve
-              </button>
-              <button
-                onClick={() => { if (confirm(`Reject application from ${a.name}?`)) rejectMutation.mutate(a.id); }}
-                disabled={rejectMutation.isPending}
-                className="flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded bg-destructive/5 text-destructive border border-destructive/20 hover:bg-destructive/10 transition-colors font-medium disabled:opacity-50"
-              >
-                <XCircle className="w-3 h-3" /> Reject
-              </button>
-            </div>
+            {expandedId === a.id && (
+              <div className="border-t border-amber-500/10 bg-amber-500/5">
+                <OnboardingAnswersPanel affiliateId={a.id} name={a.name} />
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -126,6 +194,15 @@ export default function Affiliates() {
 
   const { data: affiliates, isLoading } = useListAffiliates({ search: search || undefined });
   const createAffiliate = useCreateAffiliate();
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => apiFetch(`/affiliates/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: getListAffiliatesQueryKey() });
+      toast({ title: "Affiliate deleted" });
+    },
+    onError: () => toast({ title: "Error", description: "Could not delete affiliate", variant: "destructive" }),
+  });
 
   const form = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -163,7 +240,7 @@ export default function Affiliates() {
         </button>
       </div>
 
-      {/* Pending approval panel — only shown when there are pending signups */}
+      {/* Pending approval panel */}
       <PendingApprovalPanel />
 
       {/* Search */}
@@ -187,34 +264,45 @@ export default function Affiliates() {
               <th className="text-left px-4 py-2.5">Ref Code</th>
               <th className="text-left px-4 py-2.5">Status</th>
               <th className="text-left px-4 py-2.5">Joined</th>
+              <th className="px-4 py-2.5"></th>
             </tr>
           </thead>
           <tbody>
             {isLoading && (
-              <tr><td colSpan={4} className="px-4 py-8 text-center text-xs text-muted-foreground">Loading...</td></tr>
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-xs text-muted-foreground">Loading...</td></tr>
             )}
             {!isLoading && affiliates?.map(a => (
               <tr
                 key={a.id}
                 data-testid={`row-affiliate-${a.id}`}
-                className="border-b border-border last:border-0 hover:bg-accent/40 transition-colors cursor-pointer"
-                onClick={() => setLocation(`/affiliates/${a.id}`)}
+                className="border-b border-border last:border-0 hover:bg-accent/40 transition-colors"
               >
-                <td className="px-4 py-2.5">
+                <td className="px-4 py-2.5 cursor-pointer" onClick={() => setLocation(`/affiliates/${a.id}`)}>
                   <p className="font-medium text-xs">{a.name}</p>
                   <p className="text-[10px] text-muted-foreground">{a.email}</p>
                 </td>
-                <td className="px-4 py-2.5">
+                <td className="px-4 py-2.5 cursor-pointer" onClick={() => setLocation(`/affiliates/${a.id}`)}>
                   <span className="font-mono text-[10px] bg-secondary px-2 py-0.5 rounded">{a.refCode}</span>
                 </td>
-                <td className="px-4 py-2.5"><StatusBadge status={a.status} /></td>
-                <td className="px-4 py-2.5 text-xs text-muted-foreground">
+                <td className="px-4 py-2.5 cursor-pointer" onClick={() => setLocation(`/affiliates/${a.id}`)}>
+                  <StatusBadge status={a.status} />
+                </td>
+                <td className="px-4 py-2.5 text-xs text-muted-foreground cursor-pointer" onClick={() => setLocation(`/affiliates/${a.id}`)}>
                   {new Date(a.createdAt).toLocaleDateString()}
+                </td>
+                <td className="px-4 py-2.5">
+                  <button
+                    onClick={() => { if (confirm(`Delete ${a.name}'s account permanently?`)) deleteMutation.mutate(a.id); }}
+                    className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                    title="Delete affiliate"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
                 </td>
               </tr>
             ))}
             {!isLoading && !affiliates?.length && (
-              <tr><td colSpan={4} className="px-4 py-8 text-center text-xs text-muted-foreground">No affiliates found</td></tr>
+              <tr><td colSpan={5} className="px-4 py-8 text-center text-xs text-muted-foreground">No affiliates found</td></tr>
             )}
           </tbody>
         </table>

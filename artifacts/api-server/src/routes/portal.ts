@@ -2,9 +2,10 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { eq, and, gt } from "drizzle-orm";
 import crypto from "crypto";
-import { db, affiliatesTable, passwordResetTokensTable, systemConfigTable } from "@workspace/db";
+import { db, affiliatesTable, passwordResetTokensTable, systemConfigTable, onboardingResponsesTable } from "@workspace/db";
 import { generateRefCode } from "../lib/utils";
 import { sendEmail, verificationEmailHtml, approvalEmailHtml, resetEmailHtml } from "../lib/email";
+import { getTemplate, renderTemplate, seedEmailTemplates } from "./email_templates";
 
 const router = Router();
 
@@ -15,6 +16,8 @@ function safeAffiliate(row: typeof affiliatesTable.$inferSelect) {
     createdAt: row.createdAt.toISOString(),
     verificationTokenExpiry: row.verificationTokenExpiry?.toISOString() ?? null,
     welcomedAt: row.welcomedAt?.toISOString() ?? null,
+    onboardingSubmittedAt: row.onboardingSubmittedAt?.toISOString() ?? null,
+    onboardingSubmitted: !!row.onboardingSubmittedAt,
   };
 }
 
@@ -90,10 +93,10 @@ router.post("/portal/signup", async (req, res) => {
     return res.status(201).json({ ok: true, status: "pending_verification", email: affiliate.email });
   }
 
-  // Auto-verified: if active, set session immediately
-  if (newStatus === "active") {
+  // Auto-verified: set session for active and pending_approval so onboarding can be submitted
+  if (newStatus === "active" || newStatus === "pending_approval") {
     req.session.affiliateId = affiliate.id;
-    return res.status(201).json({ ok: true, status: "active", autoVerified: true, affiliate: safeAffiliate(affiliate) });
+    return res.status(201).json({ ok: true, status: newStatus, autoVerified: true, affiliate: safeAffiliate(affiliate) });
   }
 
   return res.status(201).json({ ok: true, status: newStatus, email: affiliate.email, autoVerified: true });
@@ -123,7 +126,7 @@ router.post("/portal/verify-email", async (req, res) => {
     verificationTokenExpiry: null,
   }).where(eq(affiliatesTable.id, affiliate.id));
 
-  if (newStatus === "active") {
+  if (newStatus === "active" || newStatus === "pending_approval") {
     req.session.affiliateId = affiliate.id;
   }
 
@@ -228,7 +231,8 @@ router.post("/portal/login", async (req, res) => {
       return res.status(403).json({ error: "Please verify your email before signing in.", code: "PENDING_VERIFICATION", email: affiliate.email });
     }
     if (affiliate.signupStatus === "pending_approval") {
-      return res.status(403).json({ error: "Your account is pending admin approval. You'll receive an email when approved.", code: "PENDING_APPROVAL" });
+      req.session.affiliateId = affiliate.id;
+      return res.json(safeAffiliate(affiliate));
     }
     if (affiliate.signupStatus === "rejected") {
       return res.status(403).json({ error: "Your application was not approved. Contact us for more information.", code: "REJECTED" });
@@ -346,11 +350,21 @@ router.post("/portal/approve-affiliate/:id", async (req, res) => {
 
   const origin = req.headers.origin ?? `https://${req.headers.host}`;
   const config = await getConfig();
-  await sendEmail({
-    to: affiliate.email,
-    subject: `You're approved! — ${config?.programName ?? "Affiliate Program"}`,
-    html: approvalEmailHtml(affiliate.name, `${origin}/portal`, config?.programName ?? undefined),
-  });
+  const tpl = await getTemplate("approval");
+  if (tpl) {
+    const { subject, body } = renderTemplate(tpl, {
+      name: affiliate.name,
+      programName: config?.programName ?? "Affiliate Program",
+      link: `${origin}/portal`,
+    });
+    await sendEmail({ to: affiliate.email, subject, html: body });
+  } else {
+    await sendEmail({
+      to: affiliate.email,
+      subject: `You're approved! — ${config?.programName ?? "Affiliate Program"}`,
+      html: approvalEmailHtml(affiliate.name, `${origin}/portal`, config?.programName ?? undefined),
+    });
+  }
 
   return res.json(safeAffiliate(affiliate));
 });
@@ -368,7 +382,97 @@ router.post("/portal/reject-affiliate/:id", async (req, res) => {
     .returning();
 
   if (!affiliate) return res.status(404).json({ error: "Affiliate not found" });
+
+  const config = await getConfig();
+  const origin = req.headers.origin ?? `https://${req.headers.host}`;
+  const tpl = await getTemplate("rejection");
+  if (tpl) {
+    const { subject, body } = renderTemplate(tpl, {
+      name: affiliate.name,
+      programName: config?.programName ?? "Affiliate Program",
+      link: `${origin}/portal`,
+    });
+    await sendEmail({ to: affiliate.email, subject, html: body });
+  }
+
   return res.json(safeAffiliate(affiliate));
+});
+
+// ──────────────────────────────────────────────
+// AFFILIATE: submit onboarding questions
+// ──────────────────────────────────────────────
+const ONBOARDING_QUESTIONS = [
+  { key: "inspiration", question: "What inspired you to join our affiliate program?" },
+  { key: "about_you", question: "Tell us about yourself — who are you and what do you do?" },
+  { key: "promotion", question: "How do you plan to share your referral links? (e.g. WhatsApp, Instagram, YouTube, blog)" },
+  { key: "belief", question: "Why do you believe in the products you'll be promoting?" },
+  { key: "meaning", question: "What would earning your first commission mean to you?" },
+];
+
+router.post("/portal/onboarding", async (req, res) => {
+  const affiliateId = req.session?.affiliateId;
+  if (!affiliateId) return res.status(401).json({ error: "Not authenticated" });
+
+  const answers = req.body as Record<string, string>;
+
+  // Clear existing responses for idempotency
+  await db.delete(onboardingResponsesTable).where(eq(onboardingResponsesTable.affiliateId, affiliateId));
+
+  for (const q of ONBOARDING_QUESTIONS) {
+    const answer = (answers[q.key] ?? "").trim();
+    if (answer) {
+      await db.insert(onboardingResponsesTable).values({
+        affiliateId,
+        questionKey: q.key,
+        question: q.question,
+        answer,
+      });
+    }
+  }
+
+  await db.update(affiliatesTable)
+    .set({ onboardingSubmittedAt: new Date() })
+    .where(eq(affiliatesTable.id, affiliateId));
+
+  return res.json({ ok: true });
+});
+
+// Public (no session) onboarding submit via email token
+router.post("/portal/onboarding-by-token", async (req, res) => {
+  const { affiliateId, answers } = req.body as { affiliateId?: number; answers?: Record<string, string> };
+  if (!affiliateId || !answers) return res.status(400).json({ error: "affiliateId and answers required" });
+
+  // Set session for this affiliate so they're "logged in" after submission
+  req.session.affiliateId = affiliateId;
+
+  await db.delete(onboardingResponsesTable).where(eq(onboardingResponsesTable.affiliateId, affiliateId));
+  for (const q of ONBOARDING_QUESTIONS) {
+    const answer = (answers[q.key] ?? "").trim();
+    if (answer) {
+      await db.insert(onboardingResponsesTable).values({
+        affiliateId,
+        questionKey: q.key,
+        question: q.question,
+        answer,
+      });
+    }
+  }
+
+  await db.update(affiliatesTable)
+    .set({ onboardingSubmittedAt: new Date() })
+    .where(eq(affiliatesTable.id, affiliateId));
+
+  return res.json({ ok: true });
+});
+
+// ──────────────────────────────────────────────
+// ADMIN: get onboarding answers for one affiliate
+// ──────────────────────────────────────────────
+router.get("/portal/affiliate-onboarding/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  const rows = await db.select().from(onboardingResponsesTable).where(eq(onboardingResponsesTable.affiliateId, id));
+  return res.json(rows);
 });
 
 // ──────────────────────────────────────────────

@@ -1,10 +1,10 @@
 import { useGetConfig, useUpdateConfig, getGetConfigQueryKey } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useState } from "react";
-import { Eye, EyeOff, Copy, CheckCircle, Mail, Server, Globe, Shield, Info } from "lucide-react";
+import { Eye, EyeOff, Copy, CheckCircle, Mail, Server, Globe, Shield, Info, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -379,6 +379,7 @@ export default function Settings() {
             ["POST", "/api/conversions", "Record payment conversion"],
             ["GET", "/api/stats/dashboard", "Dashboard summary"],
             ["POST", "/api/cron/release-holds", "Release expired holds"],
+            ["GET", "/api/track?ref=CODE&app=APP", "Referral click tracking (with redirect)"],
           ].map(([method, path, desc]) => (
             <div key={path} className="flex items-center gap-2">
               <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${method === "GET" ? "bg-blue-500/10 text-blue-400" : "bg-amber-500/10 text-amber-400"}`}>{method}</span>
@@ -388,6 +389,121 @@ export default function Settings() {
           ))}
         </div>
       </div>
+
+      {/* Email Templates */}
+      <EmailTemplatesSection />
+    </div>
+  );
+}
+
+type EmailTemplate = { name: string; subject: string; body: string; updatedAt: string };
+
+const TEMPLATE_LABELS: Record<string, string> = {
+  verification: "Email Verification",
+  approval: "Application Approved",
+  rejection: "Application Rejected",
+  password_reset: "Password Reset",
+};
+
+async function apiFetch(path: string, options?: RequestInit) {
+  const res = await fetch(`/api${path}`, { headers: { "Content-Type": "application/json" }, credentials: "include", ...options });
+  if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? "Request failed"); }
+  return res.json();
+}
+
+function EmailTemplateCard({ template, onSave }: { template: EmailTemplate; onSave: (name: string, subject: string, body: string) => Promise<void> }) {
+  const [subject, setSubject] = useState(template.subject);
+  const [body, setBody] = useState(template.body);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const { toast } = useToast();
+
+  const isDirty = subject !== template.subject || body !== template.body;
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onSave(template.name, subject, body);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      toast({ title: "Error saving template", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-card border border-border rounded overflow-hidden">
+      <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+        <FileText className="w-3.5 h-3.5 text-muted-foreground" />
+        <p className="text-xs font-semibold">{TEMPLATE_LABELS[template.name] ?? template.name}</p>
+        <span className="ml-auto font-mono text-[9px] bg-secondary text-muted-foreground px-1.5 py-0.5 rounded">{template.name}</span>
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="space-y-1">
+          <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Subject</label>
+          <input
+            value={subject}
+            onChange={e => setSubject(e.target.value)}
+            className="w-full px-3 py-2 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Body (HTML)</label>
+          <textarea
+            value={body}
+            onChange={e => setBody(e.target.value)}
+            rows={8}
+            className="w-full px-3 py-2 text-xs font-mono bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 resize-y"
+          />
+        </div>
+        <p className="text-[10px] text-muted-foreground">Variables: <code className="bg-secondary px-1 rounded">{"{{name}}"}</code> <code className="bg-secondary px-1 rounded">{"{{programName}}"}</code> <code className="bg-secondary px-1 rounded">{"{{link}}"}</code></p>
+        <div className="flex justify-end">
+          <button
+            onClick={handleSave}
+            disabled={!isDirty || saving}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-primary text-primary-foreground rounded font-semibold hover:opacity-90 disabled:opacity-40 transition-opacity"
+          >
+            {saved ? <><CheckCircle className="w-3 h-3" /> Saved</> : saving ? "Saving..." : "Save Template"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmailTemplatesSection() {
+  const { data: templates, refetch } = useQuery<EmailTemplate[]>({
+    queryKey: ["email-templates"],
+    queryFn: () => apiFetch("/email-templates"),
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: ({ name, subject, body }: { name: string; subject: string; body: string }) =>
+      apiFetch(`/email-templates/${name}`, { method: "PATCH", body: JSON.stringify({ subject, body }) }),
+    onSuccess: () => refetch(),
+  });
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Email Templates</h2>
+        <p className="text-[10px] text-muted-foreground mt-1">Customize the emails sent to affiliates. Supports HTML and template variables.</p>
+      </div>
+      {!templates ? (
+        <p className="text-xs text-muted-foreground">Loading templates...</p>
+      ) : (
+        <div className="space-y-4">
+          {templates.map(tpl => (
+            <EmailTemplateCard
+              key={tpl.name}
+              template={tpl}
+              onSave={(name, subject, body) => saveMutation.mutateAsync({ name, subject, body })}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

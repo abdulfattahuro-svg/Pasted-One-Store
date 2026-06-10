@@ -5,7 +5,7 @@ import {
   TrendingUp, Copy, CheckCircle, Clock, ExternalLink, LogOut,
   ArrowRightLeft, Wallet, Eye, EyeOff, AppWindow, Share2,
   MessageCircle, Facebook, Mail, ChevronDown, ChevronUp, Video,
-  Sparkles, DollarSign, Users, Zap, Star, X, Send, PlayCircle
+  Sparkles, DollarSign, Users, Zap, Star, X, Send, XCircle
 } from "lucide-react";
 
 async function apiPost(path: string, body: object) {
@@ -34,7 +34,7 @@ function StatusBadge({ status }: { status: string }) {
   return <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border uppercase tracking-wider ${colors[status] ?? "bg-secondary text-muted-foreground border-border"}`}>{status}</span>;
 }
 
-type Affiliate = { id: number; name: string; email: string; refCode: string; status: string; signupStatus: string | null; isSelfSignup: boolean; welcomedAt: string | null; createdAt: string };
+type Affiliate = { id: number; name: string; email: string; refCode: string; status: string; signupStatus: string | null; isSelfSignup: boolean; welcomedAt: string | null; createdAt: string; onboardingSubmitted?: boolean; };
 type ProgramInfo = { programName: string; programTagline: string; commissionHighlight: string; programDetails: string; approvalMode: string; emailProvider?: string };
 type Stats = { clicks: number; signups: number; conversions: number; holdAmount: number; payableAmount: number; paidAmount: number; totalEarnings: number };
 type Conversion = { id: number; appName: string; amount: number; commission: number; status: string; conversionDate: string; holdEndDate: string | null };
@@ -455,9 +455,88 @@ function PendingApprovalScreen({ onBack }: { onBack: () => void }) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// ONBOARDING QUESTIONS (shown after verification with manual approval)
+// ─────────────────────────────────────────────────────────────
+const ONBOARDING_QUESTIONS = [
+  { key: "inspiration", label: "What inspired you to join our affiliate program?" },
+  { key: "about_you", label: "Tell us about yourself — who are you and what do you do?" },
+  { key: "promotion", label: "How do you plan to share your referral links? (e.g. WhatsApp, Instagram, YouTube, blog)" },
+  { key: "belief", label: "Why do you believe in the products you'll be promoting?" },
+  { key: "meaning", label: "What would earning your first commission mean to you?" },
+];
+
+function OnboardingQuestionsScreen({ affiliate, onDone, onLogout }: {
+  affiliate: Affiliate;
+  onDone: () => void;
+  onLogout: () => void;
+}) {
+  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      await apiPost("/portal/onboarding", answers);
+      onDone();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const answered = Object.values(answers).filter(v => v.trim()).length;
+  const canSubmit = answered >= 3;
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 text-foreground">
+      <div className="w-full max-w-lg space-y-5">
+        <div className="text-center space-y-2">
+          <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto">
+            <Star className="w-7 h-7 text-primary" />
+          </div>
+          <h2 className="text-xl font-bold">You're almost in, {affiliate.name.split(" ")[0]}!</h2>
+          <p className="text-sm text-muted-foreground">Help us understand you better. Answer at least 3 of the questions below to complete your application — this takes less than 2 minutes.</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {ONBOARDING_QUESTIONS.map((q, i) => (
+            <div key={q.key} className="bg-card border border-border rounded p-3 space-y-1.5">
+              <label className="text-xs font-semibold text-foreground">{i + 1}. {q.label}</label>
+              <textarea
+                value={answers[q.key] ?? ""}
+                onChange={e => setAnswers(a => ({ ...a, [q.key]: e.target.value }))}
+                rows={2}
+                placeholder="Your answer..."
+                className="w-full bg-background border border-border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 placeholder:text-muted-foreground/50 resize-none"
+              />
+            </div>
+          ))}
+
+          {error && <p className="text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded px-3 py-2">{error}</p>}
+
+          <div className="flex items-center justify-between pt-1">
+            <span className="text-[10px] text-muted-foreground">{answered}/5 answered <span className={answered >= 3 ? "text-primary" : ""}>(3 minimum)</span></span>
+            <button type="submit" disabled={!canSubmit || loading}
+              className="px-5 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded hover:bg-primary/90 disabled:opacity-40 transition-colors">
+              {loading ? "Submitting..." : "Submit application →"}
+            </button>
+          </div>
+        </form>
+
+        <button onClick={onLogout} className="block w-full text-xs text-center text-muted-foreground hover:text-foreground transition-colors">← Sign out</button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // AUTH FORM
 // ─────────────────────────────────────────────────────────────
-type AuthScreen = "login" | "signup" | "setup" | "forgot" | "forgot-sent" | "reset" | "verify-sent" | "pending-approval" | "verifying";
+type AuthScreen = "login" | "signup" | "setup" | "forgot" | "forgot-sent" | "reset" | "verify-sent" | "pending-approval" | "verifying" | "onboarding-questions";
 
 function AuthForm({ onSuccess, initialToken, initialVerifyToken }: {
   onSuccess: (a: Affiliate) => void;
@@ -473,7 +552,6 @@ function AuthForm({ onSuccess, initialToken, initialVerifyToken }: {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [demoLoading, setDemoLoading] = useState(false);
   const [pendingEmail, setPendingEmail] = useState("");
   const [, setLocation] = useLocation();
 
@@ -481,14 +559,10 @@ function AuthForm({ onSuccess, initialToken, initialVerifyToken }: {
     if (initialVerifyToken) {
       setLoading(true);
       apiPost("/portal/verify-email", { token: initialVerifyToken })
-        .then(d => {
+        .then(() => {
           setLoading(false);
           setLocation("/portal");
-          if (d.status === "active") {
-            apiGet("/portal/me").then(a => onSuccess(a as Affiliate)).catch(() => {});
-          } else {
-            setScreen("pending-approval");
-          }
+          apiGet("/portal/me").then(a => onSuccess(a as Affiliate)).catch(() => setScreen("login"));
         })
         .catch(err => {
           setError(err.message);
@@ -497,19 +571,6 @@ function AuthForm({ onSuccess, initialToken, initialVerifyToken }: {
         });
     }
   }, [initialVerifyToken]);
-
-  const handleDemoLogin = async () => {
-    setDemoLoading(true);
-    setError(null);
-    try {
-      const data = await apiPost("/portal/demo-login", {});
-      onSuccess(data as Affiliate);
-    } catch (err: unknown) {
-      setError((err as Error).message);
-    } finally {
-      setDemoLoading(false);
-    }
-  };
 
   if (screen === "verifying") {
     return (
@@ -543,10 +604,8 @@ function AuthForm({ onSuccess, initialToken, initialVerifyToken }: {
         onSuccess(data as Affiliate);
       } else if (screen === "signup") {
         const data = await apiPost("/portal/signup", { name, email, password });
-        if (data.autoVerified && data.status === "active" && data.affiliate) {
+        if (data.autoVerified && data.affiliate) {
           onSuccess(data.affiliate as Affiliate);
-        } else if (data.autoVerified && data.status === "pending_approval") {
-          setScreen("pending-approval");
         } else {
           setPendingEmail(email);
           setScreen("verify-sent");
@@ -672,22 +731,11 @@ function AuthForm({ onSuccess, initialToken, initialVerifyToken }: {
         </form>
 
         {(screen === "login" || screen === "signup") && (
-          <>
-            <div className="flex items-center gap-2">
-              <div className="flex-1 h-px bg-border" />
-              <span className="text-[10px] text-muted-foreground">or</span>
-              <div className="flex-1 h-px bg-border" />
-            </div>
-            <button
-              type="button"
-              onClick={handleDemoLogin}
-              disabled={demoLoading}
-              className="w-full flex items-center justify-center gap-2 text-xs py-2.5 rounded border border-border bg-secondary hover:bg-accent text-muted-foreground hover:text-foreground transition-colors font-medium disabled:opacity-50"
-            >
-              <PlayCircle className="w-3.5 h-3.5" />
-              {demoLoading ? "Loading demo..." : "Try demo account"}
-            </button>
-          </>
+          <div className="bg-secondary/40 border border-border rounded p-3 space-y-1">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Demo credentials</p>
+            <p className="text-xs font-mono text-foreground">demo@affiliate.demo</p>
+            <p className="text-xs font-mono text-muted-foreground">Password: <span className="text-foreground">demo1234</span></p>
+          </div>
         )}
 
         {screen === "signup" && (
@@ -724,7 +772,34 @@ export default function Portal() {
   }
 
   if (affiliate && !resetToken && !verifyToken) {
-    return <PortalDashboard affiliate={affiliate} onLogout={() => setAffiliate(null)} />;
+    const logOut = () => { apiPost("/portal/logout", {}); setAffiliate(null); };
+    if (affiliate.signupStatus === "pending_approval") {
+      if (!affiliate.onboardingSubmitted) {
+        return <OnboardingQuestionsScreen
+          affiliate={affiliate}
+          onDone={() => setAffiliate({ ...affiliate, onboardingSubmitted: true })}
+          onLogout={logOut}
+        />;
+      }
+      return <PendingApprovalScreen onBack={logOut} />;
+    }
+    if (affiliate.signupStatus === "rejected") {
+      return (
+        <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 text-foreground">
+          <div className="w-full max-w-sm text-center space-y-5">
+            <div className="w-16 h-16 rounded-2xl bg-destructive/10 border border-destructive/20 flex items-center justify-center mx-auto">
+              <XCircle className="w-7 h-7 text-destructive" />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold">Application not approved</h2>
+              <p className="text-sm text-muted-foreground mt-2">Your application wasn't approved at this time. Contact us if you think this is a mistake.</p>
+            </div>
+            <button onClick={logOut} className="text-xs text-muted-foreground hover:text-foreground transition-colors">← Sign out</button>
+          </div>
+        </div>
+      );
+    }
+    return <PortalDashboard affiliate={affiliate} onLogout={logOut} />;
   }
 
   return <AuthForm onSuccess={setAffiliate} initialToken={resetToken} initialVerifyToken={verifyToken} />;

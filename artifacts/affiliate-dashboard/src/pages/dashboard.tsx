@@ -179,7 +179,7 @@ export default function Dashboard() {
             </tr>
           </thead>
           <tbody>
-            {(topAffiliates ?? []).map((a, i) => (
+            {(Array.isArray(topAffiliates) ? topAffiliates : []).map((a, i) => (
               <tr key={a.affiliateId} className="border-b border-border last:border-0 hover:bg-accent/40 transition-colors"
                 data-testid={`row-top-affiliate-${a.affiliateId}`}>
                 <td className="px-4 py-2.5">

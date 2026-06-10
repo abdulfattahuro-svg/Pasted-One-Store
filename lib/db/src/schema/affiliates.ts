@@ -18,6 +18,7 @@ export const affiliatesTable = pgTable("affiliates", {
   verificationToken: varchar("verification_token", { length: 128 }),
   verificationTokenExpiry: timestamp("verification_token_expiry"),
   welcomedAt: timestamp("welcomed_at"),
+  onboardingSubmittedAt: timestamp("onboarding_submitted_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

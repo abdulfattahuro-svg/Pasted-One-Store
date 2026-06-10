@@ -5,3 +5,5 @@ export * from "./payouts";
 export * from "./config";
 export * from "./apps";
 export * from "./password_reset_tokens";
+export * from "./onboarding";
+export * from "./email_templates";

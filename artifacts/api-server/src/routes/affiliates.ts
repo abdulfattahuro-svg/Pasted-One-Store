@@ -141,4 +141,12 @@ router.get("/affiliates/:id/stats", async (req, res) => {
   });
 });
 
+// ─── DELETE AFFILIATE ─────────────────────────────────────────
+router.delete("/affiliates/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+  await db.delete(affiliatesTable).where(eq(affiliatesTable.id, id));
+  return res.json({ ok: true });
+});
+
 export default router;

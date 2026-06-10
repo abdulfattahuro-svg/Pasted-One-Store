@@ -8,6 +8,8 @@ import statsRouter from "./stats";
 import configRouter from "./config";
 import portalRouter from "./portal";
 import appsRouter from "./apps";
+import trackingRouter from "./tracking";
+import emailTemplatesRouter, { seedEmailTemplates } from "./email_templates";
 
 const router: IRouter = Router();
 
@@ -20,5 +22,9 @@ router.use(statsRouter);
 router.use(configRouter);
 router.use(portalRouter);
 router.use(appsRouter);
+router.use(trackingRouter);
+router.use(emailTemplatesRouter);
+
+seedEmailTemplates().catch(() => {});
 
 export default router;

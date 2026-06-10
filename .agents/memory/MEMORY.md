@@ -1,0 +1,3 @@
+- [Affiliate portal auth flow](affiliate-portal-auth.md) — login returns 200 (not 403) for pending_approval affiliates, Portal root handles signupStatus routing
+- [DB schema location](db-schema.md) — DB package at lib/db/src/schema/, not packages/. Tables: onboarding_responses, email_templates, affiliates (has onboardingSubmittedAt column)
+- [Config auto-seed](config-autoseed.md) — ensureConfig() in config.ts creates default row if table empty; systemConfig was empty causing 404

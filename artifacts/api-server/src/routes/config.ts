@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { eq } from "drizzle-orm";
+import crypto from "crypto";
 import { db, systemConfigTable } from "@workspace/db";
 import { UpdateConfigBody } from "@workspace/api-zod";
 
@@ -12,9 +13,27 @@ function formatConfig(c: typeof systemConfigTable.$inferSelect) {
   };
 }
 
-router.get("/config", async (req, res) => {
-  const [config] = await db.select().from(systemConfigTable);
-  if (!config) return res.status(404).json({ error: "Config not found" });
+async function ensureConfig() {
+  const [existing] = await db.select().from(systemConfigTable);
+  if (existing) return existing;
+  const [created] = await db.insert(systemConfigTable).values({
+    apiKey: crypto.randomUUID(),
+    commissionType: "fixed",
+    commissionValue: "500",
+    holdDays: 14,
+    currency: "USD",
+    approvalMode: "auto",
+    emailProvider: "console",
+    programName: "OneStore Affiliate Program",
+    programTagline: "Earn real money sharing apps you believe in.",
+    commissionHighlight: "Earn up to $500 per referral",
+    programDetails: "Join hundreds of affiliates earning passive income every month. No experience needed — just share your link and watch your earnings grow.",
+  }).returning();
+  return created;
+}
+
+router.get("/config", async (_req, res) => {
+  const config = await ensureConfig();
   return res.json(formatConfig(config));
 });
 
