@@ -7,6 +7,7 @@ import payoutsRouter from "./payouts";
 import statsRouter from "./stats";
 import configRouter from "./config";
 import portalRouter from "./portal";
+import appsRouter from "./apps";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(payoutsRouter);
 router.use(statsRouter);
 router.use(configRouter);
 router.use(portalRouter);
+router.use(appsRouter);
 
 export default router;

@@ -13,6 +13,7 @@ import Payouts from "@/pages/payouts";
 import Events from "@/pages/events";
 import Settings from "@/pages/settings";
 import Portal from "@/pages/portal";
+import Apps from "@/pages/apps";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -40,6 +41,7 @@ function Router() {
             <Route path="/dashboard" component={Dashboard} />
             <Route path="/affiliates/:id" component={AffiliateDetail} />
             <Route path="/affiliates" component={Affiliates} />
+            <Route path="/apps" component={Apps} />
             <Route path="/conversions" component={Conversions} />
             <Route path="/payouts" component={Payouts} />
             <Route path="/events" component={Events} />
