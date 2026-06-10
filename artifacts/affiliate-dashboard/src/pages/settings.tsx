@@ -10,10 +10,26 @@ import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
+const CURRENCIES = [
+  { code: "USD", label: "USD — US Dollar" },
+  { code: "EUR", label: "EUR — Euro" },
+  { code: "GBP", label: "GBP — British Pound" },
+  { code: "CAD", label: "CAD — Canadian Dollar" },
+  { code: "AUD", label: "AUD — Australian Dollar" },
+  { code: "JPY", label: "JPY — Japanese Yen" },
+  { code: "SGD", label: "SGD — Singapore Dollar" },
+  { code: "AED", label: "AED — UAE Dirham" },
+  { code: "INR", label: "INR — Indian Rupee" },
+  { code: "BRL", label: "BRL — Brazilian Real" },
+  { code: "MXN", label: "MXN — Mexican Peso" },
+  { code: "NGN", label: "NGN — Nigerian Naira" },
+];
+
 const formSchema = z.object({
   commissionType: z.enum(["fixed", "percentage"]),
   commissionValue: z.string().refine(v => !isNaN(Number(v)) && Number(v) >= 0, "Must be a valid number"),
   holdDays: z.string().refine(v => !isNaN(Number(v)) && Number(v) >= 0, "Must be a valid number"),
+  currency: z.string().min(1),
 });
 
 type FormData = z.infer<typeof formSchema>;
@@ -32,7 +48,8 @@ export default function Settings() {
       commissionType: config.commissionType as "fixed" | "percentage",
       commissionValue: String(config.commissionValue),
       holdDays: String(config.holdDays),
-    } : { commissionType: "fixed", commissionValue: "500", holdDays: "14" },
+      currency: config.currency ?? "USD",
+    } : { commissionType: "fixed", commissionValue: "500", holdDays: "14", currency: "USD" },
   });
 
   const onSubmit = (values: FormData) => {
@@ -40,6 +57,7 @@ export default function Settings() {
       commissionType: values.commissionType,
       commissionValue: Number(values.commissionValue),
       holdDays: Number(values.holdDays),
+      currency: values.currency,
     }}, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetConfigQueryKey() });
@@ -151,6 +169,24 @@ export default function Settings() {
                 <FormLabel className="text-xs">Hold Period (Days)</FormLabel>
                 <FormControl>
                   <Input data-testid="input-hold-days" {...field} type="number" className="text-xs h-8" />
+                </FormControl>
+                <FormMessage className="text-[10px]" />
+              </FormItem>
+            )} />
+
+            <FormField control={form.control} name="currency" render={({ field }) => (
+              <FormItem>
+                <FormLabel className="text-xs">Display Currency</FormLabel>
+                <FormControl>
+                  <select
+                    data-testid="select-currency"
+                    {...field}
+                    className="w-full bg-background border border-input rounded px-3 py-1.5 text-xs h-8 focus:outline-none focus:ring-1 focus:ring-ring"
+                  >
+                    {CURRENCIES.map(c => (
+                      <option key={c.code} value={c.code}>{c.label}</option>
+                    ))}
+                  </select>
                 </FormControl>
                 <FormMessage className="text-[10px]" />
               </FormItem>

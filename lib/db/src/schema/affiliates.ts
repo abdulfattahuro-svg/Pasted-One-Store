@@ -10,6 +10,7 @@ export const affiliatesTable = pgTable("affiliates", {
   email: varchar("email", { length: 255 }).notNull().unique(),
   refCode: varchar("ref_code", { length: 50 }).notNull().unique(),
   status: affiliateStatusEnum("status").notNull().default("active"),
+  passwordHash: varchar("password_hash", { length: 255 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

@@ -29,6 +29,7 @@ router.patch("/config", async (req, res) => {
   if (body.data.commissionType) updates.commissionType = body.data.commissionType;
   if (body.data.commissionValue !== undefined) updates.commissionValue = String(body.data.commissionValue);
   if (body.data.holdDays !== undefined) updates.holdDays = body.data.holdDays;
+  if (body.data.currency) updates.currency = body.data.currency;
 
   const [row] = await db.update(systemConfigTable)
     .set(updates)

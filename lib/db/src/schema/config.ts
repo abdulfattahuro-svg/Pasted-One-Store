@@ -6,6 +6,7 @@ export const systemConfigTable = pgTable("system_config", {
   commissionValue: decimal("commission_value", { precision: 10, scale: 2 }).notNull().default("500"),
   holdDays: integer("hold_days").notNull().default(14),
   apiKey: varchar("api_key", { length: 255 }).notNull(),
+  currency: varchar("currency", { length: 10 }).notNull().default("USD"),
 });
 
 export type SystemConfig = typeof systemConfigTable.$inferSelect;

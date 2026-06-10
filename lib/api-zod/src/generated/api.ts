@@ -333,7 +333,8 @@ export const GetConfigResponse = zod.object({
   "commissionType": zod.enum(['fixed', 'percentage']),
   "commissionValue": zod.number(),
   "holdDays": zod.number(),
-  "apiKey": zod.string()
+  "apiKey": zod.string(),
+  "currency": zod.string()
 })
 
 
@@ -343,14 +344,16 @@ export const GetConfigResponse = zod.object({
 export const UpdateConfigBody = zod.object({
   "commissionType": zod.enum(['fixed', 'percentage']).optional(),
   "commissionValue": zod.number().optional(),
-  "holdDays": zod.number().optional()
+  "holdDays": zod.number().optional(),
+  "currency": zod.string().optional()
 })
 
 export const UpdateConfigResponse = zod.object({
   "commissionType": zod.enum(['fixed', 'percentage']),
   "commissionValue": zod.number(),
   "holdDays": zod.number(),
-  "apiKey": zod.string()
+  "apiKey": zod.string(),
+  "currency": zod.string()
 })
 
 

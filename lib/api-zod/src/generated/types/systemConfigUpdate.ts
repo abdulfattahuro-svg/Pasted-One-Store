@@ -11,4 +11,5 @@ export interface SystemConfigUpdate {
   commissionType?: SystemConfigUpdateCommissionType;
   commissionValue?: number;
   holdDays?: number;
+  currency?: string;
 }

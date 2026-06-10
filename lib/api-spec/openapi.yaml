@@ -838,11 +838,14 @@ components:
           type: integer
         apiKey:
           type: string
+        currency:
+          type: string
       required:
         - commissionType
         - commissionValue
         - holdDays
         - apiKey
+        - currency
 
     SystemConfigUpdate:
       type: object
@@ -854,3 +857,5 @@ components:
           type: number
         holdDays:
           type: integer
+        currency:
+          type: string

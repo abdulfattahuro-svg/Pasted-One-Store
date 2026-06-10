@@ -208,6 +208,7 @@ export interface SystemConfig {
   commissionValue: number;
   holdDays: number;
   apiKey: string;
+  currency: string;
 }
 
 export type SystemConfigUpdateCommissionType = typeof SystemConfigUpdateCommissionType[keyof typeof SystemConfigUpdateCommissionType];
@@ -222,6 +223,7 @@ export interface SystemConfigUpdate {
   commissionType?: SystemConfigUpdateCommissionType;
   commissionValue?: number;
   holdDays?: number;
+  currency?: string;
 }
 
 export type ListAffiliatesParams = {

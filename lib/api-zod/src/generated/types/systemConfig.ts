@@ -12,4 +12,5 @@ export interface SystemConfig {
   commissionValue: number;
   holdDays: number;
   apiKey: string;
+  currency: string;
 }
