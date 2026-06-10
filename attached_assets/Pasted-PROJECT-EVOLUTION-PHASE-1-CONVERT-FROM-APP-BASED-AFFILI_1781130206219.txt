@@ -1,0 +1,194 @@
+PROJECT EVOLUTION PHASE 1: CONVERT FROM APP-BASED AFFILIATE SYSTEM TO UNIVERSAL PRODUCTS & OFFERS PLATFORM
+
+Analyze the entire codebase before making changes.
+
+Current system uses the concept of "Apps" being promoted by affiliates.
+
+We need to evolve this into a universal affiliate platform capable of promoting software, services, physical products, courses, subscriptions, consulting services, offline businesses, events, and future products.
+
+IMPORTANT:
+Do not remove existing functionality.
+Perform migrations carefully and maintain backward compatibility where possible.
+
+GOALS
+
+1. Replace "Apps" concept with "Products & Offers"
+
+The current Apps module should become a generic Products & Offers module.
+
+A Product/Offer can represent:
+
+* SaaS Product
+* Mobile App
+* PWA
+* Course
+* Ebook
+* Consulting Service
+* Subscription
+* Physical Product
+* Event Ticket
+* Offline Service
+* Custom Offer
+
+2. Database Changes
+
+Create or update schema to support:
+
+Products
+
+Fields:
+
+* id
+* name
+* slug
+* description
+* category
+* landingPageUrl
+* websiteUrl
+* promoText
+* imageUrl
+* videoUrl
+* status
+* createdAt
+* updatedAt
+
+Category options:
+
+* software
+* mobile_app
+* pwa
+* course
+* ebook
+* subscription
+* consulting
+* physical_product
+* event
+* offline_service
+* custom
+
+3. Commission Engine Foundation
+
+Each product must support its own commission structure.
+
+Add fields:
+
+* commissionType
+* commissionValue
+* recurringEnabled
+* recurringPercentage
+* holdPeriodDays
+
+commissionType values:
+
+* fixed
+* percentage
+* recurring
+* hybrid
+
+Examples:
+
+Fixed:
+₦5,000 per sale
+
+Percentage:
+10%
+
+Recurring:
+20% every renewal
+
+Hybrid:
+₦2,000 + 10%
+
+4. Product Marketing Assets
+
+Each product should support multiple marketing assets.
+
+Create a new table:
+
+ProductAssets
+
+Fields:
+
+* id
+* productId
+* type
+* title
+* fileUrl
+* createdAt
+
+Asset Types:
+
+* image
+* video
+* pdf
+* flyer
+* banner
+* social_post
+
+5. Affiliate Portal Updates
+
+Update affiliate portal to:
+
+* show Products instead of Apps
+* generate referral links per product
+* view product details
+* access marketing assets
+
+Do not remove existing affiliate features.
+
+6. Dashboard Updates
+
+Rename all references of:
+
+Apps → Products
+
+Wherever appropriate.
+
+Update statistics to show:
+
+* Total Products
+* Active Products
+* Top Performing Products
+
+7. Backward Compatibility
+
+Existing data must not break.
+
+If Apps table already exists:
+
+Either:
+
+* migrate data into Products
+  OR
+* create compatibility layer
+
+Existing affiliate links must continue working.
+
+8. Future Preparation
+
+Prepare architecture for future modules:
+
+* Leads
+* Offline Conversions
+* CRM Pipeline
+* Webhooks
+* Public API
+* Multi Business Support
+* Multi Tenant SaaS
+
+Do NOT implement these yet.
+
+Only design database and services so they can be added later without major rewrites.
+
+DELIVERABLES
+
+After implementation provide:
+
+1. List of database changes
+2. List of files modified
+3. Migration strategy used
+4. Remaining technical debt
+5. Recommendations for Phase 2
+
+Do not proceed to multi-tenant development yet.
+Focus only on transforming the platform into a universal Products & Offers affiliate platform.

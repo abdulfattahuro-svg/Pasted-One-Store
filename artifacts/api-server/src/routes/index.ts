@@ -8,6 +8,7 @@ import statsRouter from "./stats";
 import configRouter from "./config";
 import portalRouter from "./portal";
 import appsRouter from "./apps";
+import productsRouter from "./products";
 import trackingRouter from "./tracking";
 import emailTemplatesRouter, { seedEmailTemplates } from "./email_templates";
 
@@ -22,6 +23,7 @@ router.use(statsRouter);
 router.use(configRouter);
 router.use(portalRouter);
 router.use(appsRouter);
+router.use(productsRouter);
 router.use(trackingRouter);
 router.use(emailTemplatesRouter);
 

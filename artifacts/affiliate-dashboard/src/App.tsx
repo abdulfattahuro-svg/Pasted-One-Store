@@ -14,6 +14,7 @@ import Events from "@/pages/events";
 import Settings from "@/pages/settings";
 import Portal from "@/pages/portal";
 import Apps from "@/pages/apps";
+import Products from "@/pages/products";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -42,6 +43,7 @@ function Router() {
             <Route path="/affiliates/:id" component={AffiliateDetail} />
             <Route path="/affiliates" component={Affiliates} />
             <Route path="/apps" component={Apps} />
+            <Route path="/products" component={Products} />
             <Route path="/conversions" component={Conversions} />
             <Route path="/payouts" component={Payouts} />
             <Route path="/events" component={Events} />

@@ -4,6 +4,7 @@ export * from "./conversions";
 export * from "./payouts";
 export * from "./config";
 export * from "./apps";
+export * from "./product_assets";
 export * from "./password_reset_tokens";
 export * from "./onboarding";
 export * from "./email_templates";

@@ -40,7 +40,7 @@ type Stats = { clicks: number; signups: number; conversions: number; holdAmount:
 type Conversion = { id: number; appName: string; amount: number; commission: number; status: string; conversionDate: string; holdEndDate: string | null };
 type Payout = { id: number; amount: number; status: string; createdAt: string; paidAt: string | null };
 type Config = { currency: string };
-type App = { id: number; name: string; slug: string; description: string | null; websiteUrl: string; promoText: string | null; imageUrls: string[]; videoUrl: string | null; active: boolean };
+type App = { id: number; name: string; slug: string; description: string | null; websiteUrl: string; promoText: string | null; imageUrls: string[]; videoUrl: string | null; active: boolean; category: string | null; };
 
 // ─────────────────────────────────────────────────────────────
 // ONBOARDING MODAL
@@ -146,7 +146,10 @@ function AppCard({ app, refCode }: { app: App; refCode: string }) {
           <AppWindow className="w-4 h-4 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-semibold text-sm">{app.name}</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-semibold text-sm">{app.name}</p>
+            {app.category && <span className="text-[10px] text-muted-foreground capitalize bg-secondary px-1.5 py-0.5 rounded">{app.category.replace(/_/g, " ")}</span>}
+          </div>
           {app.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{app.description}</p>}
           <div className="mt-2 flex items-center gap-1.5 flex-wrap">
             <div className="flex items-center gap-1 bg-background border border-border rounded px-2 py-1 min-w-0">
@@ -236,7 +239,7 @@ function PortalDashboard({ affiliate, onLogout }: { affiliate: Affiliate; onLogo
   const { data: conversions } = useQuery<Conversion[]>({ queryKey: ["portal-conversions", affiliate.id], queryFn: () => apiGet(`/conversions?affiliateId=${affiliate.id}`) });
   const { data: payouts } = useQuery<Payout[]>({ queryKey: ["portal-payouts", affiliate.id], queryFn: () => apiGet(`/payouts?affiliateId=${affiliate.id}`) });
   const { data: config } = useQuery<Config>({ queryKey: ["portal-config"], queryFn: () => apiGet("/config") });
-  const { data: apps } = useQuery<App[]>({ queryKey: ["portal-apps"], queryFn: () => apiGet("/apps"), select: a => a.filter((x: App) => x.active) });
+  const { data: apps } = useQuery<App[]>({ queryKey: ["portal-products"], queryFn: () => apiGet("/products"), select: a => a.filter((x: App) => x.active) });
   const { data: programInfo } = useQuery<ProgramInfo>({ queryKey: ["portal-program-info"], queryFn: () => apiGet("/portal/program-info") });
 
   const currency = config?.currency ?? "USD";
@@ -276,7 +279,7 @@ function PortalDashboard({ affiliate, onLogout }: { affiliate: Affiliate; onLogo
 
         <div className="border-b border-border px-6">
           <div className="flex gap-0">
-            {[{ key: "overview", label: "Overview" }, { key: "apps", label: `Promote Apps${apps?.length ? ` (${apps.length})` : ""}` }].map(t => (
+            {[{ key: "overview", label: "Overview" }, { key: "apps", label: `Products${apps?.length ? ` (${apps.length})` : ""}` }].map(t => (
               <button key={t.key} onClick={() => setTab(t.key as typeof tab)}
                 className={`text-xs px-4 py-3 border-b-2 transition-colors font-medium ${tab === t.key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
                 {t.label}

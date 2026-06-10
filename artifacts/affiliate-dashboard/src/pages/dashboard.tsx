@@ -30,11 +30,7 @@ function fmtCurrency(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 }).format(n);
 }
 
-const APP_LABELS: Record<string, string> = {
-  onetailor: "OneTailor",
-  onesolar: "OneSolar",
-  onesalon: "OneSalon",
-};
+const APP_LABELS: Record<string, string> = {};
 
 export default function Dashboard() {
   const { data: stats, isLoading } = useGetDashboardStats();
@@ -70,7 +66,7 @@ export default function Dashboard() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold tracking-tight">Network Overview</h1>
-          <p className="text-xs text-muted-foreground mt-0.5">Real-time affiliate performance across all PWAs</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Real-time affiliate performance across all products</p>
         </div>
         <button
           data-testid="button-release-holds"
@@ -146,7 +142,7 @@ export default function Dashboard() {
 
         {/* By app */}
         <div className="bg-card border border-border rounded p-4">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">By App</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">By Product</p>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={(Array.isArray(byApp) ? byApp : []).filter(a => a.conversions > 0 || a.clicks > 0)}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(240 10% 12%)" />

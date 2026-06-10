@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { eq } from "drizzle-orm";
-import { db, affiliatesTable, conversionsTable, referralEventsTable, systemConfigTable } from "@workspace/db";
+import { db, affiliatesTable, conversionsTable, referralEventsTable, systemConfigTable, productsTable } from "@workspace/db";
 import {
   ListConversionsQueryParams,
   CreateConversionBody,
@@ -69,13 +69,31 @@ router.post("/conversions", async (req, res) => {
     return res.status(500).json({ error: "System config not initialized" });
   }
 
-  const commissionValue = Number(config.commissionValue);
-  const commission = config.commissionType === "fixed"
-    ? commissionValue
-    : (body.data.amount * commissionValue) / 100;
+  // Check for product-level commission override
+  const [product] = await db.select().from(productsTable).where(eq(productsTable.slug, body.data.appName));
+  const effectiveType = product?.commissionType ?? config.commissionType;
+  const effectiveValue = product?.commissionValue !== null && product?.commissionValue !== undefined
+    ? Number(product.commissionValue)
+    : Number(config.commissionValue);
+  const effectiveHoldDays = product?.holdPeriodDays ?? config.holdDays;
+
+  let commission: number;
+  if (effectiveType === "fixed") {
+    commission = effectiveValue;
+  } else if (effectiveType === "recurring") {
+    const pct = product?.recurringPercentage !== null && product?.recurringPercentage !== undefined
+      ? Number(product.recurringPercentage) : effectiveValue;
+    commission = (body.data.amount * pct) / 100;
+  } else if (effectiveType === "hybrid") {
+    const pct = product?.recurringPercentage !== null && product?.recurringPercentage !== undefined
+      ? Number(product.recurringPercentage) : 0;
+    commission = effectiveValue + (body.data.amount * pct) / 100;
+  } else {
+    commission = (body.data.amount * effectiveValue) / 100;
+  }
 
   const holdEndDate = new Date();
-  holdEndDate.setDate(holdEndDate.getDate() + config.holdDays);
+  holdEndDate.setDate(holdEndDate.getDate() + effectiveHoldDays);
 
   const [row] = await db.insert(conversionsTable).values({
     affiliateId: firstSignup.affiliateId,

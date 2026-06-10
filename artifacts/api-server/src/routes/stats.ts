@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { and, lte, eq } from "drizzle-orm";
-import { db, affiliatesTable, referralEventsTable, conversionsTable, payoutsTable, systemConfigTable } from "@workspace/db";
+import { db, affiliatesTable, referralEventsTable, conversionsTable, payoutsTable, systemConfigTable, productsTable } from "@workspace/db";
 
 const router = Router();
 
@@ -29,27 +29,35 @@ router.get("/stats/dashboard", async (req, res) => {
   });
 });
 
-router.get("/stats/by-app", async (req, res) => {
+async function buildProductStats() {
   const events = await db.select().from(referralEventsTable);
   const conversions = await db.select().from(conversionsTable);
+  const products = await db.select().from(productsTable);
 
-  const apps = ["onetailor", "onesolar", "onesalon"];
-  const allApps = new Set([
-    ...apps,
+  const productNameMap = new Map(products.map(p => [p.slug, p.name]));
+  const allSlugs = new Set([
+    ...products.map(p => p.slug),
     ...events.map(e => e.appName),
     ...conversions.map(c => c.appName),
   ]);
 
-  const result = Array.from(allApps).map(appName => ({
-    appName,
-    clicks: events.filter(e => e.appName === appName && e.eventType === "click").length,
-    signups: events.filter(e => e.appName === appName && e.eventType === "signup").length,
-    conversions: conversions.filter(c => c.appName === appName).length,
-    revenue: conversions.filter(c => c.appName === appName).reduce((s, c) => s + Number(c.amount), 0),
-    commission: conversions.filter(c => c.appName === appName).reduce((s, c) => s + Number(c.commission), 0),
+  return Array.from(allSlugs).map(slug => ({
+    appName: slug,
+    productName: productNameMap.get(slug) ?? slug,
+    clicks: events.filter(e => e.appName === slug && e.eventType === "click").length,
+    signups: events.filter(e => e.appName === slug && e.eventType === "signup").length,
+    conversions: conversions.filter(c => c.appName === slug).length,
+    revenue: conversions.filter(c => c.appName === slug).reduce((s, c) => s + Number(c.amount), 0),
+    commission: conversions.filter(c => c.appName === slug).reduce((s, c) => s + Number(c.commission), 0),
   }));
+}
 
-  return res.json(result);
+router.get("/stats/by-app", async (_req, res) => {
+  return res.json(await buildProductStats());
+});
+
+router.get("/stats/by-product", async (_req, res) => {
+  return res.json(await buildProductStats());
 });
 
 router.get("/stats/top-affiliates", async (req, res) => {
