@@ -148,7 +148,7 @@ export default function Dashboard() {
         <div className="bg-card border border-border rounded p-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">By App</p>
           <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={byApp?.filter(a => a.conversions > 0 || a.clicks > 0) ?? []}>
+            <BarChart data={(Array.isArray(byApp) ? byApp : []).filter(a => a.conversions > 0 || a.clicks > 0)}>
               <CartesianGrid strokeDasharray="3 3" stroke="hsl(240 10% 12%)" />
               <XAxis dataKey="appName" tick={{ fontSize: 9, fill: "hsl(240 5% 65%)" }} tickFormatter={(v: string) => APP_LABELS[v] ?? v} />
               <YAxis tick={{ fontSize: 9, fill: "hsl(240 5% 65%)" }} />

@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useListAffiliates, useCreateAffiliate, getListAffiliatesQueryKey } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Plus, Search, UserCheck, UserX } from "lucide-react";
+import { Plus, Search, UserCheck, UserX, Clock, CheckCircle, XCircle, Bell } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
@@ -19,6 +19,21 @@ const formSchema = z.object({
 
 type FormData = z.infer<typeof formSchema>;
 
+type PendingAffiliate = {
+  id: number;
+  name: string;
+  email: string;
+  refCode: string;
+  createdAt: string;
+  signupStatus: string | null;
+};
+
+async function apiFetch(path: string, options?: RequestInit) {
+  const res = await fetch(`/api${path}`, { headers: { "Content-Type": "application/json" }, ...options });
+  if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? "Request failed"); }
+  return res.json();
+}
+
 function StatusBadge({ status }: { status: string }) {
   return (
     <span className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded uppercase tracking-wider ${
@@ -27,6 +42,78 @@ function StatusBadge({ status }: { status: string }) {
       {status === "active" ? <UserCheck className="w-2.5 h-2.5" /> : <UserX className="w-2.5 h-2.5" />}
       {status}
     </span>
+  );
+}
+
+function PendingApprovalPanel() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+
+  const { data: pending, isLoading } = useQuery<PendingAffiliate[]>({
+    queryKey: ["pending-affiliates"],
+    queryFn: () => apiFetch("/portal/pending-affiliates"),
+    refetchInterval: 30000,
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: (id: number) => apiFetch(`/portal/approve-affiliate/${id}`, { method: "POST" }),
+    onSuccess: (_, id) => {
+      qc.invalidateQueries({ queryKey: ["pending-affiliates"] });
+      qc.invalidateQueries({ queryKey: getListAffiliatesQueryKey() });
+      toast({ title: "Affiliate approved", description: "They've been notified by email." });
+    },
+    onError: () => toast({ title: "Error", description: "Could not approve affiliate", variant: "destructive" }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: (id: number) => apiFetch(`/portal/reject-affiliate/${id}`, { method: "POST" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pending-affiliates"] });
+      toast({ title: "Application rejected" });
+    },
+    onError: () => toast({ title: "Error", description: "Could not reject affiliate", variant: "destructive" }),
+  });
+
+  if (isLoading || !pending?.length) return null;
+
+  return (
+    <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg overflow-hidden">
+      <div className="px-4 py-3 border-b border-amber-500/20 flex items-center gap-2">
+        <Bell className="w-3.5 h-3.5 text-amber-400" />
+        <p className="text-xs font-semibold text-amber-400">Pending Approval</p>
+        <span className="ml-auto text-[10px] bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full font-bold">{pending.length}</span>
+      </div>
+      <div className="divide-y divide-amber-500/10">
+        {pending.map(a => (
+          <div key={a.id} className="px-4 py-3 flex items-center gap-3">
+            <div className="w-7 h-7 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center flex-shrink-0">
+              <Clock className="w-3.5 h-3.5 text-amber-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold">{a.name}</p>
+              <p className="text-[10px] text-muted-foreground">{a.email}</p>
+            </div>
+            <span className="text-[10px] text-muted-foreground hidden sm:block">{new Date(a.createdAt).toLocaleDateString()}</span>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => approveMutation.mutate(a.id)}
+                disabled={approveMutation.isPending}
+                className="flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors font-medium disabled:opacity-50"
+              >
+                <CheckCircle className="w-3 h-3" /> Approve
+              </button>
+              <button
+                onClick={() => { if (confirm(`Reject application from ${a.name}?`)) rejectMutation.mutate(a.id); }}
+                disabled={rejectMutation.isPending}
+                className="flex items-center gap-1 text-[10px] px-2.5 py-1.5 rounded bg-destructive/5 text-destructive border border-destructive/20 hover:bg-destructive/10 transition-colors font-medium disabled:opacity-50"
+              >
+                <XCircle className="w-3 h-3" /> Reject
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -75,6 +162,9 @@ export default function Affiliates() {
           New Affiliate
         </button>
       </div>
+
+      {/* Pending approval panel — only shown when there are pending signups */}
+      <PendingApprovalPanel />
 
       {/* Search */}
       <div className="relative">
@@ -136,6 +226,7 @@ export default function Affiliates() {
           <DialogHeader>
             <DialogTitle className="text-sm font-bold">Add New Affiliate</DialogTitle>
           </DialogHeader>
+          <p className="text-xs text-muted-foreground -mt-2">The affiliate will use the "Admin Invite" tab on the portal to set their password.</p>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4 mt-2">
               <FormField control={form.control} name="name" render={({ field }) => (

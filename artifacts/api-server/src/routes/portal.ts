@@ -35,10 +35,10 @@ router.post("/portal/signup", async (req, res) => {
 
   const [existing] = await db.select().from(affiliatesTable).where(eq(affiliatesTable.email, normalEmail));
   if (existing) {
-    // Admin-created account: let them set up password via set-password flow
     if (!existing.isSelfSignup && !existing.passwordHash) {
       return res.status(409).json({
-        error: "An admin has already created an account for this email. Use 'Set up account' to create your password."
+        error: "An admin has already created an account for this email. Use the 'Admin Invite' tab to set up your password.",
+        code: "USE_SETUP_ACCOUNT",
       });
     }
     if (existing.passwordHash) {
@@ -46,10 +46,27 @@ router.post("/portal/signup", async (req, res) => {
     }
   }
 
+  const config = await getConfig();
+  const approvalMode = config?.approvalMode ?? "auto";
+  const emailProvider = config?.emailProvider ?? "console";
+
   const hash = await bcrypt.hash(password, 12);
   const refCode = generateRefCode(name);
-  const verificationToken = crypto.randomBytes(32).toString("hex");
-  const verificationTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  // If no email server configured (console mode), skip verification and auto-activate
+  const skipVerification = emailProvider === "console";
+
+  let newStatus: "pending_verification" | "pending_approval" | "active";
+  let verificationToken: string | null = null;
+  let verificationTokenExpiry: Date | null = null;
+
+  if (skipVerification) {
+    newStatus = approvalMode === "auto" ? "active" : "pending_approval";
+  } else {
+    newStatus = "pending_verification";
+    verificationToken = crypto.randomBytes(32).toString("hex");
+    verificationTokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  }
 
   const [affiliate] = await db.insert(affiliatesTable).values({
     name: name.trim(),
@@ -57,22 +74,29 @@ router.post("/portal/signup", async (req, res) => {
     refCode,
     passwordHash: hash,
     isSelfSignup: true,
-    signupStatus: "pending_verification",
+    signupStatus: newStatus,
     verificationToken,
     verificationTokenExpiry,
   }).returning();
 
-  const origin = req.headers.origin ?? `https://${req.headers.host}`;
-  const verifyLink = `${origin}/portal?verify=${verificationToken}`;
-  const config = await getConfig();
+  if (!skipVerification && verificationToken) {
+    const origin = req.headers.origin ?? `https://${req.headers.host}`;
+    const verifyLink = `${origin}/portal?verify=${verificationToken}`;
+    await sendEmail({
+      to: affiliate.email,
+      subject: `Verify your email — ${config?.programName ?? "Affiliate Program"}`,
+      html: verificationEmailHtml(affiliate.name, verifyLink, config?.programName ?? undefined),
+    });
+    return res.status(201).json({ ok: true, status: "pending_verification", email: affiliate.email });
+  }
 
-  await sendEmail({
-    to: affiliate.email,
-    subject: `Verify your email — ${config?.programName ?? "Affiliate Program"}`,
-    html: verificationEmailHtml(affiliate.name, verifyLink, config?.programName ?? undefined),
-  });
+  // Auto-verified: if active, set session immediately
+  if (newStatus === "active") {
+    req.session.affiliateId = affiliate.id;
+    return res.status(201).json({ ok: true, status: "active", autoVerified: true, affiliate: safeAffiliate(affiliate) });
+  }
 
-  return res.status(201).json({ ok: true, status: "pending_verification", email: affiliate.email });
+  return res.status(201).json({ ok: true, status: newStatus, email: affiliate.email, autoVerified: true });
 });
 
 // ──────────────────────────────────────────────
@@ -134,7 +158,7 @@ router.post("/portal/resend-verification", async (req, res) => {
 });
 
 // ──────────────────────────────────────────────
-// ADMIN-CREATED ACCOUNT SETUP (existing behavior)
+// ADMIN-CREATED ACCOUNT SETUP
 // ──────────────────────────────────────────────
 router.post("/portal/setup-account", async (req, res) => {
   const { email, password } = req.body as { email?: string; password?: string };
@@ -143,15 +167,49 @@ router.post("/portal/setup-account", async (req, res) => {
 
   const [affiliate] = await db.select().from(affiliatesTable).where(eq(affiliatesTable.email, email.toLowerCase().trim()));
   if (!affiliate) return res.status(404).json({ error: "No affiliate account found for this email. Contact your partner manager." });
-  if (affiliate.isSelfSignup) return res.status(400).json({ error: "Please use the sign-in page." });
+  if (affiliate.isSelfSignup) return res.status(400).json({ error: "Please use the sign-in page or 'Join free' tab." });
   if (affiliate.status === "suspended") return res.status(403).json({ error: "This account has been suspended." });
   if (affiliate.passwordHash) return res.status(409).json({ error: "Account already set up. Please log in instead." });
 
   const hash = await bcrypt.hash(password, 12);
-  await db.update(affiliatesTable).set({ passwordHash: hash }).where(eq(affiliatesTable.id, affiliate.id));
+  // Admin-invited affiliates are immediately active (no email verification needed)
+  await db.update(affiliatesTable).set({
+    passwordHash: hash,
+    signupStatus: "active",
+  }).where(eq(affiliatesTable.id, affiliate.id));
 
   req.session.affiliateId = affiliate.id;
-  return res.json(safeAffiliate({ ...affiliate, passwordHash: hash }));
+  return res.json(safeAffiliate({ ...affiliate, passwordHash: hash, signupStatus: "active" }));
+});
+
+// ──────────────────────────────────────────────
+// DEMO LOGIN (creates a demo account if needed)
+// ──────────────────────────────────────────────
+router.post("/portal/demo-login", async (req, res) => {
+  const demoEmail = "demo@affiliate.demo";
+  const demoPassword = "demo1234";
+
+  let [affiliate] = await db.select().from(affiliatesTable).where(eq(affiliatesTable.email, demoEmail));
+
+  if (!affiliate) {
+    const hash = await bcrypt.hash(demoPassword, 10);
+    const refCode = generateRefCode("Demo User");
+    [affiliate] = await db.insert(affiliatesTable).values({
+      name: "Demo Affiliate",
+      email: demoEmail,
+      refCode,
+      passwordHash: hash,
+      isSelfSignup: true,
+      signupStatus: "active",
+      status: "active",
+    }).returning();
+  } else if (affiliate.signupStatus !== "active") {
+    await db.update(affiliatesTable).set({ signupStatus: "active", status: "active" }).where(eq(affiliatesTable.id, affiliate.id));
+    affiliate = { ...affiliate, signupStatus: "active", status: "active" };
+  }
+
+  req.session.affiliateId = affiliate.id;
+  return res.json(safeAffiliate(affiliate));
 });
 
 // ──────────────────────────────────────────────
@@ -165,7 +223,6 @@ router.post("/portal/login", async (req, res) => {
   if (!affiliate || !affiliate.passwordHash) return res.status(401).json({ error: "Invalid email or password" });
   if (affiliate.status === "suspended") return res.status(403).json({ error: "This account has been suspended." });
 
-  // Self-signup: check verification/approval status
   if (affiliate.isSelfSignup) {
     if (affiliate.signupStatus === "pending_verification") {
       return res.status(403).json({ error: "Please verify your email before signing in.", code: "PENDING_VERIFICATION", email: affiliate.email });
@@ -207,7 +264,7 @@ router.get("/portal/me", async (req, res) => {
 });
 
 // ──────────────────────────────────────────────
-// MARK WELCOMED (after onboarding modal shown)
+// MARK WELCOMED
 // ──────────────────────────────────────────────
 router.post("/portal/mark-welcomed", async (req, res) => {
   const affiliateId = req.session?.affiliateId;
@@ -325,6 +382,7 @@ router.get("/portal/program-info", async (_req, res) => {
     commissionHighlight: config?.commissionHighlight ?? "Earn up to $500 per referral",
     programDetails: config?.programDetails ?? "",
     approvalMode: config?.approvalMode ?? "auto",
+    emailProvider: config?.emailProvider ?? "console",
   });
 });
 

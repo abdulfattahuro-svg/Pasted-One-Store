@@ -5,7 +5,7 @@ import {
   TrendingUp, Copy, CheckCircle, Clock, ExternalLink, LogOut,
   ArrowRightLeft, Wallet, Eye, EyeOff, AppWindow, Share2,
   MessageCircle, Facebook, Mail, ChevronDown, ChevronUp, Video,
-  Sparkles, DollarSign, Users, Zap, Star, X, Send
+  Sparkles, DollarSign, Users, Zap, Star, X, Send, PlayCircle
 } from "lucide-react";
 
 async function apiPost(path: string, body: object) {
@@ -35,7 +35,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 type Affiliate = { id: number; name: string; email: string; refCode: string; status: string; signupStatus: string | null; isSelfSignup: boolean; welcomedAt: string | null; createdAt: string };
-type ProgramInfo = { programName: string; programTagline: string; commissionHighlight: string; programDetails: string; approvalMode: string };
+type ProgramInfo = { programName: string; programTagline: string; commissionHighlight: string; programDetails: string; approvalMode: string; emailProvider?: string };
 type Stats = { clicks: number; signups: number; conversions: number; holdAmount: number; payableAmount: number; paidAmount: number; totalEarnings: number };
 type Conversion = { id: number; appName: string; amount: number; commission: number; status: string; conversionDate: string; holdEndDate: string | null };
 type Payout = { id: number; amount: number; status: string; createdAt: string; paidAt: string | null };
@@ -43,7 +43,7 @@ type Config = { currency: string };
 type App = { id: number; name: string; slug: string; description: string | null; websiteUrl: string; promoText: string | null; imageUrls: string[]; videoUrl: string | null; active: boolean };
 
 // ─────────────────────────────────────────────────────────────
-// ONBOARDING MODAL — shown once after first approved login
+// ONBOARDING MODAL
 // ─────────────────────────────────────────────────────────────
 function OnboardingModal({ affiliate, programInfo, onClose }: { affiliate: Affiliate; programInfo: ProgramInfo | undefined; onClose: () => void }) {
   const [step, setStep] = useState(0);
@@ -87,13 +87,11 @@ function OnboardingModal({ affiliate, programInfo, onClose }: { affiliate: Affil
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
       <div className="bg-card border border-border rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
-        {/* Progress dots */}
         <div className="flex gap-1.5 justify-center pt-5 pb-0">
           {steps.map((_, i) => (
             <div key={i} className={`h-1 rounded-full transition-all duration-300 ${i === step ? "w-6 bg-primary" : i < step ? "w-3 bg-primary/40" : "w-3 bg-border"}`} />
           ))}
         </div>
-
         <div className="p-8 text-center space-y-4">
           <div className="flex justify-center">
             <div className="w-20 h-20 rounded-2xl bg-card border border-border flex items-center justify-center shadow-lg">
@@ -103,7 +101,6 @@ function OnboardingModal({ affiliate, programInfo, onClose }: { affiliate: Affil
           <h2 className="text-xl font-bold leading-tight">{current.title}</h2>
           <p className="text-sm text-muted-foreground leading-relaxed">{current.body}</p>
         </div>
-
         <div className="px-8 pb-8 space-y-2">
           <button
             onClick={() => step < steps.length - 1 ? setStep(s => s + 1) : handleDone()}
@@ -309,7 +306,7 @@ function PortalDashboard({ affiliate, onLogout }: { affiliate: Affiliate; onLogo
                 <div className="bg-card border border-border rounded p-4">
                   <div className="flex items-center gap-1.5 mb-1"><Clock className="w-3 h-3 text-amber-400" /><p className="text-[10px] uppercase tracking-wider text-amber-400">On Hold</p></div>
                   <p className="text-xl font-bold tabular-nums">{fmtCurrency(stats?.holdAmount ?? 0, currency)}</p>
-                  <p className="text-[10px] text-muted-foreground mt-1">14-day review period</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">Review period</p>
                 </div>
                 <div className="bg-card border border-border rounded p-4">
                   <div className="flex items-center gap-1.5 mb-1"><ArrowRightLeft className="w-3 h-3 text-blue-400" /><p className="text-[10px] uppercase tracking-wider text-blue-400">Payable</p></div>
@@ -460,7 +457,7 @@ function PendingApprovalScreen({ onBack }: { onBack: () => void }) {
 // ─────────────────────────────────────────────────────────────
 // AUTH FORM
 // ─────────────────────────────────────────────────────────────
-type AuthScreen = "login" | "signup" | "setup" | "forgot" | "forgot-sent" | "reset" | "verify-sent" | "pending-approval";
+type AuthScreen = "login" | "signup" | "setup" | "forgot" | "forgot-sent" | "reset" | "verify-sent" | "pending-approval" | "verifying";
 
 function AuthForm({ onSuccess, initialToken, initialVerifyToken }: {
   onSuccess: (a: Affiliate) => void;
@@ -468,7 +465,7 @@ function AuthForm({ onSuccess, initialToken, initialVerifyToken }: {
   initialVerifyToken?: string;
 }) {
   const [screen, setScreen] = useState<AuthScreen>(
-    initialToken ? "reset" : initialVerifyToken ? "verifying" as AuthScreen : "login"
+    initialToken ? "reset" : initialVerifyToken ? "verifying" : "login"
   );
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -476,21 +473,18 @@ function AuthForm({ onSuccess, initialToken, initialVerifyToken }: {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [demoLoading, setDemoLoading] = useState(false);
   const [pendingEmail, setPendingEmail] = useState("");
-  const [verifyStatus, setVerifyStatus] = useState<string | null>(null);
   const [, setLocation] = useLocation();
 
-  // Auto-verify if token in URL
   useEffect(() => {
     if (initialVerifyToken) {
       setLoading(true);
       apiPost("/portal/verify-email", { token: initialVerifyToken })
         .then(d => {
-          setVerifyStatus(d.status);
           setLoading(false);
           setLocation("/portal");
           if (d.status === "active") {
-            // Session is set, reload /portal/me
             apiGet("/portal/me").then(a => onSuccess(a as Affiliate)).catch(() => {});
           } else {
             setScreen("pending-approval");
@@ -504,7 +498,20 @@ function AuthForm({ onSuccess, initialToken, initialVerifyToken }: {
     }
   }, [initialVerifyToken]);
 
-  if (screen === ("verifying" as AuthScreen)) {
+  const handleDemoLogin = async () => {
+    setDemoLoading(true);
+    setError(null);
+    try {
+      const data = await apiPost("/portal/demo-login", {});
+      onSuccess(data as Affiliate);
+    } catch (err: unknown) {
+      setError((err as Error).message);
+    } finally {
+      setDemoLoading(false);
+    }
+  };
+
+  if (screen === "verifying") {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center space-y-3">
@@ -535,9 +542,15 @@ function AuthForm({ onSuccess, initialToken, initialVerifyToken }: {
         const data = await apiPost("/portal/login", { email, password });
         onSuccess(data as Affiliate);
       } else if (screen === "signup") {
-        await apiPost("/portal/signup", { name, email, password });
-        setPendingEmail(email);
-        setScreen("verify-sent");
+        const data = await apiPost("/portal/signup", { name, email, password });
+        if (data.autoVerified && data.status === "active" && data.affiliate) {
+          onSuccess(data.affiliate as Affiliate);
+        } else if (data.autoVerified && data.status === "pending_approval") {
+          setScreen("pending-approval");
+        } else {
+          setPendingEmail(email);
+          setScreen("verify-sent");
+        }
       } else if (screen === "setup") {
         const data = await apiPost("/portal/setup-account", { email, password });
         onSuccess(data as Affiliate);
@@ -553,6 +566,7 @@ function AuthForm({ onSuccess, initialToken, initialVerifyToken }: {
       const e = err as Error & { code?: string; email?: string };
       if (e.code === "PENDING_VERIFICATION") { setPendingEmail(e.email ?? email); setScreen("verify-sent"); return; }
       if (e.code === "PENDING_APPROVAL") { setScreen("pending-approval"); return; }
+      if (e.code === "USE_SETUP_ACCOUNT") { setError(e.message); setScreen("setup"); return; }
       setError(e.message);
     } finally {
       setLoading(false);
@@ -591,7 +605,6 @@ function AuthForm({ onSuccess, initialToken, initialVerifyToken }: {
           </p>
         </div>
 
-        {/* Tab strip for login/signup/setup */}
         {(screen === "login" || screen === "signup" || screen === "setup") && (
           <div className="flex bg-secondary rounded p-0.5 gap-0.5">
             {(["signup", "login", "setup"] as const).map(s => (
@@ -658,11 +671,30 @@ function AuthForm({ onSuccess, initialToken, initialVerifyToken }: {
           )}
         </form>
 
+        {(screen === "login" || screen === "signup") && (
+          <>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-[10px] text-muted-foreground">or</span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+            <button
+              type="button"
+              onClick={handleDemoLogin}
+              disabled={demoLoading}
+              className="w-full flex items-center justify-center gap-2 text-xs py-2.5 rounded border border-border bg-secondary hover:bg-accent text-muted-foreground hover:text-foreground transition-colors font-medium disabled:opacity-50"
+            >
+              <PlayCircle className="w-3.5 h-3.5" />
+              {demoLoading ? "Loading demo..." : "Try demo account"}
+            </button>
+          </>
+        )}
+
         {screen === "signup" && (
-          <p className="text-[10px] text-center text-muted-foreground">By signing up you agree to our terms. You'll receive a verification email.</p>
+          <p className="text-[10px] text-center text-muted-foreground">By signing up you agree to our terms. You'll receive a verification email if an email server is configured.</p>
         )}
         {screen === "setup" && (
-          <p className="text-[10px] text-center text-muted-foreground">Use this tab if your partner manager invited you by email.</p>
+          <p className="text-[10px] text-center text-muted-foreground">Use this tab if your partner manager invited you by email. Enter the email they used.</p>
         )}
       </div>
     </div>

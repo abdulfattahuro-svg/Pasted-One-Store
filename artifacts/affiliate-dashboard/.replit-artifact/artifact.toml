@@ -12,7 +12,7 @@ version = "1.0.0"
 [[services]]
 name = "web"
 paths = [ "/" ]
-localPort = 20463
+localPort = 8099
 
 [services.development]
 run = "pnpm --filter @workspace/affiliate-dashboard run dev"
@@ -27,5 +27,5 @@ from = "/*"
 to = "/index.html"
 
 [services.env]
-PORT = "20463"
+PORT = "8099"
 BASE_PATH = "/"
