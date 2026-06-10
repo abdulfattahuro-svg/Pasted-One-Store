@@ -1,0 +1,188 @@
+PROJECT EVOLUTION PHASE 2A: OFFLINE LEADS FOUNDATION
+
+Analyze the existing codebase before making changes.
+
+The platform now supports:
+
+* Products
+* Affiliates
+* Product-specific referral links
+* Product attribution
+* Product analytics
+
+Next we need to support offline affiliate marketing.
+
+GOAL
+
+Allow affiliates to submit leads manually for products that are sold offline.
+
+Examples:
+
+* Solar installation
+* Real estate
+* Insurance
+* Consulting
+* Agency services
+* MLM products
+* Training programs
+
+A lead should be trackable from submission through final conversion.
+
+DO NOT build the CRM pipeline yet.
+
+Build the lead foundation first.
+
+==================================================
+DATABASE
+========
+
+Create leads table.
+
+Fields:
+
+* id
+* productId
+* affiliateId
+* affiliateCode
+* productSlug
+* fullName
+* phone
+* email
+* notes
+* status
+* source
+* createdAt
+* updatedAt
+
+Status values:
+
+* new
+* contacted
+* interested
+* won
+* lost
+
+Source values:
+
+* affiliate_submission
+* website_form
+* api
+* import
+
+==================================================
+AFFILIATE PORTAL
+================
+
+Add "Leads" tab.
+
+Affiliates can:
+
+* Submit lead
+* View their submitted leads
+* Filter by status
+* Search leads
+
+Lead form:
+
+* Name
+* Phone
+* Email
+* Product
+* Notes
+
+==================================================
+ADMIN PANEL
+===========
+
+Create Leads Management page.
+
+Admin can:
+
+* View all leads
+* Search
+* Filter by product
+* Filter by affiliate
+* Filter by status
+
+Admin can edit lead status.
+
+==================================================
+LEAD ATTRIBUTION
+================
+
+Every lead must permanently store:
+
+* Affiliate
+* Product
+* Date submitted
+
+Even if product settings change later.
+
+==================================================
+COMMISSION READY
+================
+
+Prepare lead records for future commission triggers.
+
+Add fields:
+
+* approvedAt
+* convertedAt
+
+No commission generation yet.
+
+Just prepare the structure.
+
+==================================================
+DASHBOARD
+=========
+
+Add:
+
+* Total Leads
+* Leads This Month
+* Leads By Product
+* Leads By Affiliate
+
+==================================================
+API
+===
+
+Create endpoints:
+
+POST /api/leads
+
+GET /api/leads
+
+GET /api/leads/:id
+
+PATCH /api/leads/:id
+
+GET /api/affiliates/:id/leads
+
+==================================================
+IMPORTANT
+=========
+
+Do NOT implement:
+
+* CRM Kanban
+* Commission triggers
+* Multi-stage pipelines
+* Webhooks
+* Public APIs
+
+Yet.
+
+Focus only on creating a strong lead management foundation.
+
+DELIVERABLES
+
+Provide:
+
+1. Database changes
+2. API endpoints
+3. Admin pages
+4. Affiliate portal changes
+5. Technical debt
+6. Recommended next phase
