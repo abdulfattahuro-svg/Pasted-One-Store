@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { eq, ilike, or } from "drizzle-orm";
-import { db, affiliatesTable } from "@workspace/db";
+import { db, affiliatesTable, productsTable } from "@workspace/db";
 import {
   ListAffiliatesQueryParams,
   CreateAffiliateBody,
@@ -139,6 +139,53 @@ router.get("/affiliates/:id/stats", async (req, res) => {
     paidAmount,
     totalEarnings: holdAmount + payableAmount + paidAmount,
   });
+});
+
+// ─── PER-PRODUCT STATS FOR AN AFFILIATE ──────────────────────
+router.get("/affiliates/:id/product-stats", async (req, res) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+  const [affiliate] = await db.select({ id: affiliatesTable.id, refCode: affiliatesTable.refCode })
+    .from(affiliatesTable)
+    .where(eq(affiliatesTable.id, id));
+  if (!affiliate) return res.status(404).json({ error: "Affiliate not found" });
+
+  const products = await db.select().from(productsTable).where(eq(productsTable.active, true));
+  const events = await db.select().from(referralEventsTable).where(eq(referralEventsTable.affiliateId, id));
+  const conversions = await db.select().from(conversionsTable).where(eq(conversionsTable.affiliateId, id));
+
+  const origin = req.headers.origin ?? `https://${req.headers.host ?? "localhost"}`;
+
+  const stats = products.map(product => {
+    const productEvents = events.filter(e => e.productSlug === product.slug || e.appName === product.slug);
+    const productConversions = conversions.filter(c => c.productSlug === product.slug || c.appName === product.slug);
+
+    const clicks = productEvents.filter(e => e.eventType === "click").length;
+    const signups = productEvents.filter(e => e.eventType === "signup").length;
+    const totalConversions = productConversions.length;
+    const revenue = productConversions.reduce((s, c) => s + Number(c.amount), 0);
+    const commission = productConversions.reduce((s, c) => s + Number(c.commission), 0);
+
+    // Build the canonical referral link for this product
+    const refLink = `${origin}/product/${product.slug}?ref=${affiliate.refCode}`;
+
+    return {
+      productId: product.id,
+      productSlug: product.slug,
+      productName: product.name,
+      productDescription: product.description,
+      productCategory: product.category,
+      refLink,
+      clicks,
+      signups,
+      conversions: totalConversions,
+      revenue,
+      commission,
+    };
+  });
+
+  return res.json(stats);
 });
 
 // ─── DELETE AFFILIATE ─────────────────────────────────────────

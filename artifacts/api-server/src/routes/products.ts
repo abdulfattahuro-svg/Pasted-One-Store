@@ -27,6 +27,15 @@ router.get("/products", async (_req, res) => {
   return res.json(rows.map(formatProduct));
 });
 
+// Public lookup by slug — used by the /product/:slug redirect page
+router.get("/products/by-slug/:slug", async (req, res) => {
+  const slug = req.params.slug?.toLowerCase();
+  if (!slug) return res.status(400).json({ error: "Missing slug" });
+  const [row] = await db.select().from(productsTable).where(eq(productsTable.slug, slug));
+  if (!row) return res.status(404).json({ error: "Product not found" });
+  return res.json(formatProduct(row));
+});
+
 router.post("/products", async (req, res) => {
   const {
     name, slug, description, websiteUrl, landingPageUrl, promoText,

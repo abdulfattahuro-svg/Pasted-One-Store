@@ -15,6 +15,7 @@ import Settings from "@/pages/settings";
 import Portal from "@/pages/portal";
 import Apps from "@/pages/apps";
 import Products from "@/pages/products";
+import ProductRedirect from "@/pages/product-redirect";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -35,6 +36,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/portal" component={Portal} />
+      <Route path="/product/:slug" component={ProductRedirect} />
       <Route>
         <Layout>
           <Switch>

@@ -1,12 +1,14 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
   TrendingUp, Copy, CheckCircle, Clock, ExternalLink, LogOut,
   ArrowRightLeft, Wallet, Eye, EyeOff, AppWindow, Share2,
   MessageCircle, Facebook, Mail, ChevronDown, ChevronUp, Video,
-  Sparkles, DollarSign, Users, Zap, Star, X, Send, XCircle
+  Sparkles, DollarSign, Users, Zap, Star, X, Send, XCircle,
+  QrCode, MousePointerClick, ShoppingCart, BarChart2
 } from "lucide-react";
+import QRCode from "qrcode";
 
 async function apiPost(path: string, body: object) {
   const res = await fetch(`/api${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(body) });
@@ -41,6 +43,72 @@ type Conversion = { id: number; appName: string; amount: number; commission: num
 type Payout = { id: number; amount: number; status: string; createdAt: string; paidAt: string | null };
 type Config = { currency: string };
 type App = { id: number; name: string; slug: string; description: string | null; websiteUrl: string; promoText: string | null; imageUrls: string[]; videoUrl: string | null; active: boolean; category: string | null; };
+type ProductStat = {
+  productId: number;
+  productSlug: string;
+  productName: string;
+  productDescription: string | null;
+  productCategory: string | null;
+  refLink: string;
+  clicks: number;
+  signups: number;
+  conversions: number;
+  revenue: number;
+  commission: number;
+};
+
+// ─────────────────────────────────────────────────────────────
+// QR CODE MODAL
+// ─────────────────────────────────────────────────────────────
+function QrModal({ url, title, onClose }: { url: string; title: string; onClose: () => void }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    if (canvasRef.current) {
+      QRCode.toCanvas(canvasRef.current, url, {
+        width: 220,
+        margin: 2,
+        color: { dark: "#ffffff", light: "#0a0a0a" },
+      }).catch(() => {});
+    }
+  }, [url]);
+
+  const handleDownload = () => {
+    if (!canvasRef.current) return;
+    const link = document.createElement("a");
+    link.download = `qr-${title.toLowerCase().replace(/\s+/g, "-")}.png`;
+    link.href = canvasRef.current.toDataURL("image/png");
+    link.click();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-2xl shadow-2xl p-6 w-full max-w-xs" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <p className="text-sm font-bold">{title}</p>
+            <p className="text-[10px] text-muted-foreground">Scan to visit referral link</p>
+          </div>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="flex justify-center mb-4">
+          <canvas ref={canvasRef} className="rounded-lg border border-border" />
+        </div>
+        <p className="text-[10px] font-mono text-muted-foreground text-center mb-4 break-all">{url}</p>
+        <div className="flex gap-2">
+          <button onClick={handleDownload}
+            className="flex-1 text-xs bg-primary text-primary-foreground font-semibold py-2 rounded hover:bg-primary/90 transition-colors">
+            Download PNG
+          </button>
+          <button onClick={onClose}
+            className="flex-1 text-xs bg-secondary text-foreground font-medium py-2 rounded hover:bg-accent transition-colors">
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────
 // ONBOARDING MODAL
@@ -133,96 +201,151 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
   );
 }
 
-function AppCard({ app, refCode }: { app: App; refCode: string }) {
+function AppCard({ app, refCode, stat, currency }: { app: App; refCode: string; stat?: ProductStat; currency: string }) {
   const [expanded, setExpanded] = useState(false);
   const [imgExpanded, setImgExpanded] = useState(false);
-  const refLink = `${app.websiteUrl}${app.websiteUrl.includes("?") ? "&" : "?"}ref=${refCode}`;
+  const [showQr, setShowQr] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+
+  // New canonical referral link: /product/{slug}?ref={code}
+  const origin = window.location.origin;
+  const refLink = stat?.refLink ?? `${origin}/product/${app.slug}?ref=${refCode}`;
   const promoMessage = app.promoText ? `${app.promoText}\n\n${refLink}` : `Check out ${app.name}! ${refLink}`;
 
+  const hasStats = stat && (stat.clicks > 0 || stat.conversions > 0 || stat.commission > 0);
+
   return (
-    <div className="bg-card border border-border rounded-lg overflow-hidden">
-      <div className="px-4 py-3 flex items-start gap-3">
-        <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-          <AppWindow className="w-4 h-4 text-primary" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="font-semibold text-sm">{app.name}</p>
-            {app.category && <span className="text-[10px] text-muted-foreground capitalize bg-secondary px-1.5 py-0.5 rounded">{app.category.replace(/_/g, " ")}</span>}
+    <>
+      {showQr && <QrModal url={refLink} title={app.name} onClose={() => setShowQr(false)} />}
+
+      <div className="bg-card border border-border rounded-lg overflow-hidden">
+        <div className="px-4 py-3 flex items-start gap-3">
+          <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <AppWindow className="w-4 h-4 text-primary" />
           </div>
-          {app.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{app.description}</p>}
-          <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-            <div className="flex items-center gap-1 bg-background border border-border rounded px-2 py-1 min-w-0">
-              <ExternalLink className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-              <span className="text-[10px] font-mono text-muted-foreground truncate max-w-[180px]">{refLink}</span>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-semibold text-sm">{app.name}</p>
+              {app.category && <span className="text-[10px] text-muted-foreground capitalize bg-secondary px-1.5 py-0.5 rounded">{app.category.replace(/_/g, " ")}</span>}
+              {hasStats && (
+                <span className="text-[10px] bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded">
+                  {stat.clicks} clicks
+                </span>
+              )}
             </div>
-            <CopyButton text={refLink} label="Copy link" />
-          </div>
-          <div className="mt-2 flex items-center gap-1.5 flex-wrap">
-            <button onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(promoMessage)}`, "_blank")}
-              className="flex items-center gap-1 text-[10px] px-2 py-1 rounded bg-[#25D366]/10 text-[#25D366] border border-[#25D366]/20 hover:bg-[#25D366]/20 transition-colors font-medium">
-              <MessageCircle className="w-3 h-3" /> WhatsApp
-            </button>
-            <button onClick={() => window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(refLink)}`, "_blank")}
-              className="flex items-center gap-1 text-[10px] px-2 py-1 rounded bg-[#1877F2]/10 text-[#1877F2] border border-[#1877F2]/20 hover:bg-[#1877F2]/20 transition-colors font-medium">
-              <Facebook className="w-3 h-3" /> Facebook
-            </button>
-            <button onClick={() => window.open(`mailto:?subject=${encodeURIComponent(`Check out ${app.name}`)}&body=${encodeURIComponent(promoMessage)}`, "_blank")}
-              className="flex items-center gap-1 text-[10px] px-2 py-1 rounded bg-secondary text-muted-foreground border border-border hover:bg-accent hover:text-foreground transition-colors font-medium">
-              <Mail className="w-3 h-3" /> Email
-            </button>
-            {(app.promoText || app.imageUrls.length > 0 || app.videoUrl) && (
-              <button onClick={() => setExpanded(e => !e)} className="flex items-center gap-1 text-[10px] px-2 py-1 rounded text-muted-foreground hover:text-foreground transition-colors">
-                <Share2 className="w-3 h-3" /> Promo kit {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            {app.description && <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{app.description}</p>}
+
+            {/* Referral link display */}
+            <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+              <div className="flex items-center gap-1 bg-background border border-border rounded px-2 py-1 min-w-0">
+                <ExternalLink className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                <span className="text-[10px] font-mono text-muted-foreground truncate max-w-[200px]">{refLink}</span>
+              </div>
+              <CopyButton text={refLink} label="Copy link" />
+              <button
+                onClick={() => setShowQr(true)}
+                className="flex items-center gap-1 text-[10px] px-2 py-1 rounded bg-secondary text-muted-foreground border border-border hover:bg-accent hover:text-foreground transition-colors font-medium"
+              >
+                <QrCode className="w-3 h-3" /> QR
               </button>
+            </div>
+
+            {/* Share + action buttons */}
+            <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+              <button onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(promoMessage)}`, "_blank")}
+                className="flex items-center gap-1 text-[10px] px-2 py-1 rounded bg-[#25D366]/10 text-[#25D366] border border-[#25D366]/20 hover:bg-[#25D366]/20 transition-colors font-medium">
+                <MessageCircle className="w-3 h-3" /> WhatsApp
+              </button>
+              <button onClick={() => window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(refLink)}`, "_blank")}
+                className="flex items-center gap-1 text-[10px] px-2 py-1 rounded bg-[#1877F2]/10 text-[#1877F2] border border-[#1877F2]/20 hover:bg-[#1877F2]/20 transition-colors font-medium">
+                <Facebook className="w-3 h-3" /> Facebook
+              </button>
+              <button onClick={() => window.open(`mailto:?subject=${encodeURIComponent(`Check out ${app.name}`)}&body=${encodeURIComponent(promoMessage)}`, "_blank")}
+                className="flex items-center gap-1 text-[10px] px-2 py-1 rounded bg-secondary text-muted-foreground border border-border hover:bg-accent hover:text-foreground transition-colors font-medium">
+                <Mail className="w-3 h-3" /> Email
+              </button>
+              {stat && (
+                <button onClick={() => setShowStats(s => !s)}
+                  className="flex items-center gap-1 text-[10px] px-2 py-1 rounded text-muted-foreground hover:text-foreground transition-colors">
+                  <BarChart2 className="w-3 h-3" /> Stats {showStats ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                </button>
+              )}
+              {(app.promoText || app.imageUrls.length > 0 || app.videoUrl) && (
+                <button onClick={() => setExpanded(e => !e)} className="flex items-center gap-1 text-[10px] px-2 py-1 rounded text-muted-foreground hover:text-foreground transition-colors">
+                  <Share2 className="w-3 h-3" /> Promo kit {expanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Per-product stats panel */}
+        {showStats && stat && (
+          <div className="border-t border-border px-4 py-3">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Your performance for this product</p>
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { label: "Clicks", value: stat.clicks, icon: <MousePointerClick className="w-3 h-3 text-blue-400" />, color: "text-blue-400" },
+                { label: "Signups", value: stat.signups, icon: <Users className="w-3 h-3 text-violet-400" />, color: "text-violet-400" },
+                { label: "Conversions", value: stat.conversions, icon: <ShoppingCart className="w-3 h-3 text-primary" />, color: "text-primary" },
+                { label: "Commission", value: fmtCurrency(stat.commission, currency), icon: <DollarSign className="w-3 h-3 text-amber-400" />, color: "text-amber-400" },
+              ].map(({ label, value, icon, color }) => (
+                <div key={label} className="bg-background border border-border rounded p-2 text-center">
+                  <div className="flex justify-center mb-1">{icon}</div>
+                  <p className={`text-sm font-bold tabular-nums ${color}`}>{value}</p>
+                  <p className="text-[9px] text-muted-foreground">{label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Promo kit */}
+        {expanded && (
+          <div className="border-t border-border px-4 pb-4 pt-3 space-y-3">
+            {app.promoText && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Ready-to-share message</p>
+                  <CopyButton text={promoMessage} />
+                </div>
+                <p className="text-xs bg-secondary/50 rounded p-2 whitespace-pre-wrap leading-relaxed">{app.promoText}</p>
+              </div>
+            )}
+            {app.imageUrls.length > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Promo images</p>
+                  <button onClick={() => setImgExpanded(e => !e)} className="text-[10px] text-primary">{imgExpanded ? "Hide" : `Show ${app.imageUrls.length}`}</button>
+                </div>
+                {imgExpanded && (
+                  <div className="flex gap-2 flex-wrap">
+                    {app.imageUrls.map((url, i) => (
+                      <a key={i} href={url} target="_blank" rel="noreferrer">
+                        <img src={url} alt="" className="h-20 w-28 object-cover rounded border border-border hover:opacity-80 transition-opacity" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {app.videoUrl && (
+              <div>
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Promo video</p>
+                {app.videoUrl.includes("embed") || app.videoUrl.includes("youtube") || app.videoUrl.includes("vimeo") ? (
+                  <iframe src={app.videoUrl.includes("watch?v=") ? app.videoUrl.replace("watch?v=", "embed/") : app.videoUrl}
+                    className="w-full aspect-video rounded border border-border" allowFullScreen />
+                ) : (
+                  <a href={app.videoUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs text-primary hover:underline">
+                    <Video className="w-3.5 h-3.5" /> Watch video
+                  </a>
+                )}
+              </div>
             )}
           </div>
-        </div>
+        )}
       </div>
-      {expanded && (
-        <div className="border-t border-border px-4 pb-4 pt-3 space-y-3">
-          {app.promoText && (
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Ready-to-share message</p>
-                <CopyButton text={promoMessage} />
-              </div>
-              <p className="text-xs bg-secondary/50 rounded p-2 whitespace-pre-wrap leading-relaxed">{app.promoText}</p>
-            </div>
-          )}
-          {app.imageUrls.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Promo images</p>
-                <button onClick={() => setImgExpanded(e => !e)} className="text-[10px] text-primary">{imgExpanded ? "Hide" : `Show ${app.imageUrls.length}`}</button>
-              </div>
-              {imgExpanded && (
-                <div className="flex gap-2 flex-wrap">
-                  {app.imageUrls.map((url, i) => (
-                    <a key={i} href={url} target="_blank" rel="noreferrer">
-                      <img src={url} alt="" className="h-20 w-28 object-cover rounded border border-border hover:opacity-80 transition-opacity" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
-                    </a>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {app.videoUrl && (
-            <div>
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Promo video</p>
-              {app.videoUrl.includes("embed") || app.videoUrl.includes("youtube") || app.videoUrl.includes("vimeo") ? (
-                <iframe src={app.videoUrl.includes("watch?v=") ? app.videoUrl.replace("watch?v=", "embed/") : app.videoUrl}
-                  className="w-full aspect-video rounded border border-border" allowFullScreen />
-              ) : (
-                <a href={app.videoUrl} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-xs text-primary hover:underline">
-                  <Video className="w-3.5 h-3.5" /> Watch video
-                </a>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+    </>
   );
 }
 
@@ -241,9 +364,18 @@ function PortalDashboard({ affiliate, onLogout }: { affiliate: Affiliate; onLogo
   const { data: config } = useQuery<Config>({ queryKey: ["portal-config"], queryFn: () => apiGet("/config") });
   const { data: apps } = useQuery<App[]>({ queryKey: ["portal-products"], queryFn: () => apiGet("/products"), select: a => a.filter((x: App) => x.active) });
   const { data: programInfo } = useQuery<ProgramInfo>({ queryKey: ["portal-program-info"], queryFn: () => apiGet("/portal/program-info") });
+  const { data: productStats } = useQuery<ProductStat[]>({
+    queryKey: ["portal-product-stats", affiliate.id],
+    queryFn: () => apiGet(`/affiliates/${affiliate.id}/product-stats`),
+    enabled: tab === "apps",
+  });
 
   const currency = config?.currency ?? "USD";
   const logoutMutation = useMutation({ mutationFn: () => apiPost("/portal/logout", {}), onSuccess: () => { qc.clear(); onLogout(); } });
+
+  const productStatMap = new Map<string, ProductStat>(
+    (productStats ?? []).map(s => [s.productSlug, s])
+  );
 
   return (
     <>
@@ -374,15 +506,28 @@ function PortalDashboard({ affiliate, onLogout }: { affiliate: Affiliate; onLogo
             </div>
           ) : (
             <div className="space-y-4">
-              <p className="text-xs text-muted-foreground">Each app below comes with your personal referral link. Share it to earn commissions when people sign up.</p>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs text-muted-foreground">Each product has its own unique referral link. Share it to earn commissions when people sign up or buy.</p>
+                  <p className="text-[10px] text-muted-foreground mt-1">Your code: <span className="font-mono font-bold text-foreground">{affiliate.refCode}</span> · Links format: <span className="font-mono text-foreground">/product/&#123;slug&#125;?ref={affiliate.refCode}</span></p>
+                </div>
+              </div>
               {!apps?.length ? (
                 <div className="text-center py-16 text-muted-foreground">
                   <AppWindow className="w-8 h-8 mx-auto mb-3 opacity-30" />
-                  <p className="text-sm">No apps available yet. Check back soon!</p>
+                  <p className="text-sm">No products available yet. Check back soon!</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {apps.map(app => <AppCard key={app.id} app={app} refCode={affiliate.refCode} />)}
+                  {apps.map(app => (
+                    <AppCard
+                      key={app.id}
+                      app={app}
+                      refCode={affiliate.refCode}
+                      stat={productStatMap.get(app.slug)}
+                      currency={currency}
+                    />
+                  ))}
                 </div>
               )}
             </div>

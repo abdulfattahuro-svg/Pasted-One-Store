@@ -1,5 +1,6 @@
 import { pgTable, serial, integer, varchar, timestamp, pgEnum } from "drizzle-orm/pg-core";
 import { affiliatesTable } from "./affiliates";
+import { productsTable } from "./apps";
 
 export const eventTypeEnum = pgEnum("event_type", ["click", "signup"]);
 
@@ -11,6 +12,9 @@ export const referralEventsTable = pgTable("referral_events", {
   eventType: eventTypeEnum("event_type").notNull(),
   userId: varchar("user_id", { length: 255 }),
   ipAddress: varchar("ip_address", { length: 100 }),
+  // Product-level tracking
+  productId: integer("product_id").references(() => productsTable.id, { onDelete: "set null" }),
+  productSlug: varchar("product_slug", { length: 100 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

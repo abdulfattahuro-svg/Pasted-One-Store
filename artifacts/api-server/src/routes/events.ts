@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { eq, and } from "drizzle-orm";
-import { db, affiliatesTable, referralEventsTable } from "@workspace/db";
+import { db, affiliatesTable, referralEventsTable, productsTable } from "@workspace/db";
 import {
   TrackClickBody,
   TrackSignupBody,
@@ -24,12 +24,25 @@ router.post("/events/click", async (req, res) => {
     ? (req.headers["x-forwarded-for"] as string)?.split(",")[0] || req.socket.remoteAddress || null
     : body.data.ip;
 
+  // Resolve product from productSlug if provided (falls back to appName)
+  const productSlug = (req.body.productSlug as string | undefined) ?? body.data.appName;
+  let productId: number | null = null;
+
+  if (productSlug && productSlug !== "unknown") {
+    const [product] = await db.select({ id: productsTable.id })
+      .from(productsTable)
+      .where(eq(productsTable.slug, productSlug));
+    productId = product?.id ?? null;
+  }
+
   const [event] = await db.insert(referralEventsTable).values({
     affiliateId: affiliate.id,
     refCode: body.data.refCode,
     appName: body.data.appName,
     eventType: "click",
     ipAddress: ip,
+    productId,
+    productSlug: productSlug ?? null,
   }).returning();
 
   return res.status(201).json({ success: true, message: "Click tracked", eventId: event.id });
@@ -59,12 +72,25 @@ router.post("/events/signup", async (req, res) => {
     return res.status(200).json({ success: true, message: "Already attributed, duplicate ignored", eventId: null });
   }
 
+  // Resolve product from productSlug if provided
+  const productSlug = (req.body.productSlug as string | undefined) ?? body.data.appName;
+  let productId: number | null = null;
+
+  if (productSlug && productSlug !== "unknown") {
+    const [product] = await db.select({ id: productsTable.id })
+      .from(productsTable)
+      .where(eq(productsTable.slug, productSlug));
+    productId = product?.id ?? null;
+  }
+
   const [event] = await db.insert(referralEventsTable).values({
     affiliateId: affiliate.id,
     refCode: body.data.refCode,
     appName: body.data.appName,
     eventType: "signup",
     userId: body.data.userId,
+    productId,
+    productSlug: productSlug ?? null,
   }).returning();
 
   return res.status(201).json({ success: true, message: "Signup attributed", eventId: event.id });

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { and, lte, eq } from "drizzle-orm";
-import { db, affiliatesTable, referralEventsTable, conversionsTable, payoutsTable, systemConfigTable, productsTable } from "@workspace/db";
+import { db, affiliatesTable, referralEventsTable, conversionsTable, payoutsTable, productsTable } from "@workspace/db";
 
 const router = Router();
 
@@ -34,22 +34,29 @@ async function buildProductStats() {
   const conversions = await db.select().from(conversionsTable);
   const products = await db.select().from(productsTable);
 
-  const productNameMap = new Map(products.map(p => [p.slug, p.name]));
-  const allSlugs = new Set([
-    ...products.map(p => p.slug),
-    ...events.map(e => e.appName),
-    ...conversions.map(c => c.appName),
-  ]);
+  return products.map(product => {
+    // Match by productSlug (new) or legacy appName (backward compat)
+    const productEvents = events.filter(e =>
+      e.productSlug === product.slug || e.appName === product.slug
+    );
+    const productConversions = conversions.filter(c =>
+      c.productSlug === product.slug || c.appName === product.slug
+    );
 
-  return Array.from(allSlugs).map(slug => ({
-    appName: slug,
-    productName: productNameMap.get(slug) ?? slug,
-    clicks: events.filter(e => e.appName === slug && e.eventType === "click").length,
-    signups: events.filter(e => e.appName === slug && e.eventType === "signup").length,
-    conversions: conversions.filter(c => c.appName === slug).length,
-    revenue: conversions.filter(c => c.appName === slug).reduce((s, c) => s + Number(c.amount), 0),
-    commission: conversions.filter(c => c.appName === slug).reduce((s, c) => s + Number(c.commission), 0),
-  }));
+    return {
+      productId: product.id,
+      appName: product.slug,
+      productName: product.name,
+      productSlug: product.slug,
+      category: product.category,
+      active: product.active,
+      clicks: productEvents.filter(e => e.eventType === "click").length,
+      signups: productEvents.filter(e => e.eventType === "signup").length,
+      conversions: productConversions.length,
+      revenue: productConversions.reduce((s, c) => s + Number(c.amount), 0),
+      commission: productConversions.reduce((s, c) => s + Number(c.commission), 0),
+    };
+  });
 }
 
 router.get("/stats/by-app", async (_req, res) => {
@@ -88,7 +95,6 @@ router.get("/stats/top-affiliates", async (req, res) => {
 router.get("/stats/earnings-timeline", async (req, res) => {
   const conversions = await db.select().from(conversionsTable);
 
-  // Build last 30 days
   const days: Record<string, { earnings: number; conversions: number }> = {};
   for (let i = 29; i >= 0; i--) {
     const d = new Date();
