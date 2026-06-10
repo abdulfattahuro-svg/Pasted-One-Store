@@ -12,6 +12,7 @@ import Conversions from "@/pages/conversions";
 import Payouts from "@/pages/payouts";
 import Events from "@/pages/events";
 import Settings from "@/pages/settings";
+import Portal from "@/pages/portal";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,19 +31,24 @@ function HomeRedirect() {
 
 function Router() {
   return (
-    <Layout>
-      <Switch>
-        <Route path="/" component={HomeRedirect} />
-        <Route path="/dashboard" component={Dashboard} />
-        <Route path="/affiliates/:id" component={AffiliateDetail} />
-        <Route path="/affiliates" component={Affiliates} />
-        <Route path="/conversions" component={Conversions} />
-        <Route path="/payouts" component={Payouts} />
-        <Route path="/events" component={Events} />
-        <Route path="/settings" component={Settings} />
-        <Route component={NotFound} />
-      </Switch>
-    </Layout>
+    <Switch>
+      <Route path="/portal" component={Portal} />
+      <Route>
+        <Layout>
+          <Switch>
+            <Route path="/" component={HomeRedirect} />
+            <Route path="/dashboard" component={Dashboard} />
+            <Route path="/affiliates/:id" component={AffiliateDetail} />
+            <Route path="/affiliates" component={Affiliates} />
+            <Route path="/conversions" component={Conversions} />
+            <Route path="/payouts" component={Payouts} />
+            <Route path="/events" component={Events} />
+            <Route path="/settings" component={Settings} />
+            <Route component={NotFound} />
+          </Switch>
+        </Layout>
+      </Route>
+    </Switch>
   );
 }
 

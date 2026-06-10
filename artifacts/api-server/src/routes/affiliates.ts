@@ -64,6 +64,16 @@ router.post("/affiliates", async (req, res) => {
   return res.status(201).json({ ...row, createdAt: row.createdAt.toISOString() });
 });
 
+router.get("/affiliates/by-ref/:refCode", async (req, res) => {
+  const refCode = req.params.refCode?.toUpperCase();
+  if (!refCode) return res.status(400).json({ error: "Missing ref code" });
+
+  const [row] = await db.select().from(affiliatesTable).where(eq(affiliatesTable.refCode, refCode));
+  if (!row) return res.status(404).json({ error: "Affiliate not found" });
+
+  return res.json({ ...row, createdAt: row.createdAt.toISOString() });
+});
+
 router.get("/affiliates/:id", async (req, res) => {
   const params = GetAffiliateParams.safeParse({ id: Number(req.params.id) });
   if (!params.success) return res.status(400).json({ error: "Invalid id" });
