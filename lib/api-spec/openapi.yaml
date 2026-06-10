@@ -3,20 +3,29 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: OneStore Apps Affiliate - Universal Multi-PWA Affiliate Engine
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: affiliates
+    description: Affiliate management
+  - name: events
+    description: Click and signup tracking
+  - name: conversions
+    description: Conversion tracking and commission
+  - name: payouts
+    description: Payout management
+  - name: stats
+    description: Analytics and reporting
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,6 +33,439 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /affiliates:
+    get:
+      operationId: listAffiliates
+      tags: [affiliates]
+      summary: List all affiliates
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, suspended]
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of affiliates
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Affiliate"
+    post:
+      operationId: createAffiliate
+      tags: [affiliates]
+      summary: Create a new affiliate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AffiliateInput"
+      responses:
+        "201":
+          description: Created affiliate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Affiliate"
+
+  /affiliates/{id}:
+    get:
+      operationId: getAffiliate
+      tags: [affiliates]
+      summary: Get affiliate by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Affiliate details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Affiliate"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      operationId: updateAffiliate
+      tags: [affiliates]
+      summary: Update affiliate status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AffiliateUpdate"
+      responses:
+        "200":
+          description: Updated affiliate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Affiliate"
+
+  /affiliates/{id}/stats:
+    get:
+      operationId: getAffiliateStats
+      tags: [affiliates]
+      summary: Get stats for a specific affiliate
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Affiliate performance stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AffiliateStats"
+
+  /events/click:
+    post:
+      operationId: trackClick
+      tags: [events]
+      summary: Track a referral click
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClickInput"
+      responses:
+        "201":
+          description: Click recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackResponse"
+        "404":
+          description: Invalid ref_code
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /events/signup:
+    post:
+      operationId: trackSignup
+      tags: [events]
+      summary: Track a user signup (first-touch attribution)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignupInput"
+      responses:
+        "201":
+          description: Signup recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackResponse"
+        "200":
+          description: Signup already attributed (duplicate ignored)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrackResponse"
+
+  /events:
+    get:
+      operationId: listEvents
+      tags: [events]
+      summary: List referral events
+      parameters:
+        - name: affiliateId
+          in: query
+          schema:
+            type: integer
+        - name: appName
+          in: query
+          schema:
+            type: string
+        - name: eventType
+          in: query
+          schema:
+            type: string
+            enum: [click, signup]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: List of events
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReferralEvent"
+
+  /conversions:
+    get:
+      operationId: listConversions
+      tags: [conversions]
+      summary: List conversions
+      parameters:
+        - name: affiliateId
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [HOLD, PAYABLE, PAID]
+        - name: appName
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: List of conversions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Conversion"
+    post:
+      operationId: createConversion
+      tags: [conversions]
+      summary: Record a payment conversion
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConversionInput"
+      responses:
+        "201":
+          description: Conversion recorded with HOLD status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversion"
+        "409":
+          description: Duplicate payment_id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /conversions/{id}:
+    get:
+      operationId: getConversion
+      tags: [conversions]
+      summary: Get a conversion by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Conversion details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conversion"
+
+  /payouts:
+    get:
+      operationId: listPayouts
+      tags: [payouts]
+      summary: List payouts
+      parameters:
+        - name: affiliateId
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [PENDING, PAID]
+      responses:
+        "200":
+          description: List of payouts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Payout"
+    post:
+      operationId: createPayout
+      tags: [payouts]
+      summary: Create a manual payout request
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PayoutInput"
+      responses:
+        "201":
+          description: Payout created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payout"
+
+  /payouts/{id}/mark-paid:
+    patch:
+      operationId: markPayoutPaid
+      tags: [payouts]
+      summary: Mark a payout as paid
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Payout marked as paid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Payout"
+
+  /stats/dashboard:
+    get:
+      operationId: getDashboardStats
+      tags: [stats]
+      summary: Get overall dashboard summary
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /stats/by-app:
+    get:
+      operationId: getStatsByApp
+      tags: [stats]
+      summary: Get performance breakdown by app
+      responses:
+        "200":
+          description: Stats grouped by app
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AppStats"
+
+  /stats/top-affiliates:
+    get:
+      operationId: getTopAffiliates
+      tags: [stats]
+      summary: Get top performing affiliates
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Top affiliates by earnings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TopAffiliate"
+
+  /stats/earnings-timeline:
+    get:
+      operationId: getEarningsTimeline
+      tags: [stats]
+      summary: Get daily earnings over last 30 days
+      responses:
+        "200":
+          description: Earnings timeline
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TimelinePoint"
+
+  /cron/release-holds:
+    post:
+      operationId: releaseHolds
+      tags: [stats]
+      summary: Release expired hold conversions to PAYABLE (cron job)
+      responses:
+        "200":
+          description: Released holds
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReleaseResult"
+
+  /config:
+    get:
+      operationId: getConfig
+      tags: [stats]
+      summary: Get system configuration
+      responses:
+        "200":
+          description: System config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemConfig"
+    patch:
+      operationId: updateConfig
+      tags: [stats]
+      summary: Update system configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SystemConfigUpdate"
+      responses:
+        "200":
+          description: Updated config
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SystemConfig"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +476,381 @@ components:
       required:
         - status
 
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+
+    Affiliate:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        refCode:
+          type: string
+        status:
+          type: string
+          enum: [active, suspended]
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - name
+        - email
+        - refCode
+        - status
+        - createdAt
+
+    AffiliateInput:
+      type: object
+      properties:
+        name:
+          type: string
+        email:
+          type: string
+      required:
+        - name
+        - email
+
+    AffiliateUpdate:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [active, suspended]
+        name:
+          type: string
+
+    AffiliateStats:
+      type: object
+      properties:
+        affiliateId:
+          type: integer
+        clicks:
+          type: integer
+        signups:
+          type: integer
+        conversions:
+          type: integer
+        holdAmount:
+          type: number
+        payableAmount:
+          type: number
+        paidAmount:
+          type: number
+        totalEarnings:
+          type: number
+      required:
+        - affiliateId
+        - clicks
+        - signups
+        - conversions
+        - holdAmount
+        - payableAmount
+        - paidAmount
+        - totalEarnings
+
+    ClickInput:
+      type: object
+      properties:
+        refCode:
+          type: string
+        appName:
+          type: string
+        ip:
+          type: ["string", "null"]
+      required:
+        - refCode
+        - appName
+
+    SignupInput:
+      type: object
+      properties:
+        refCode:
+          type: string
+        userId:
+          type: string
+        appName:
+          type: string
+      required:
+        - refCode
+        - userId
+        - appName
+
+    TrackResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        eventId:
+          type: ["integer", "null"]
+      required:
+        - success
+        - message
+
+    ReferralEvent:
+      type: object
+      properties:
+        id:
+          type: integer
+        affiliateId:
+          type: integer
+        refCode:
+          type: string
+        appName:
+          type: string
+        eventType:
+          type: string
+          enum: [click, signup]
+        userId:
+          type: ["string", "null"]
+        ipAddress:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - affiliateId
+        - refCode
+        - appName
+        - eventType
+        - createdAt
+
+    ConversionInput:
+      type: object
+      properties:
+        userId:
+          type: string
+        paymentId:
+          type: string
+        amount:
+          type: number
+        appName:
+          type: string
+      required:
+        - userId
+        - paymentId
+        - amount
+        - appName
+
+    Conversion:
+      type: object
+      properties:
+        id:
+          type: integer
+        affiliateId:
+          type: integer
+        userId:
+          type: string
+        appName:
+          type: string
+        paymentId:
+          type: string
+        amount:
+          type: number
+        commission:
+          type: number
+        status:
+          type: string
+          enum: [HOLD, PAYABLE, PAID]
+        conversionDate:
+          type: string
+          format: date-time
+        holdEndDate:
+          type: string
+          format: date-time
+      required:
+        - id
+        - affiliateId
+        - userId
+        - appName
+        - paymentId
+        - amount
+        - commission
+        - status
+        - conversionDate
+        - holdEndDate
+
+    PayoutInput:
+      type: object
+      properties:
+        affiliateId:
+          type: integer
+        amount:
+          type: number
+      required:
+        - affiliateId
+        - amount
+
+    Payout:
+      type: object
+      properties:
+        id:
+          type: integer
+        affiliateId:
+          type: integer
+        amount:
+          type: number
+        status:
+          type: string
+          enum: [PENDING, PAID]
+        createdAt:
+          type: string
+          format: date-time
+        paidAt:
+          type: ["string", "null"]
+      required:
+        - id
+        - affiliateId
+        - amount
+        - status
+        - createdAt
+
+    DashboardStats:
+      type: object
+      properties:
+        totalAffiliates:
+          type: integer
+        activeAffiliates:
+          type: integer
+        totalClicks:
+          type: integer
+        totalSignups:
+          type: integer
+        totalConversions:
+          type: integer
+        holdAmount:
+          type: number
+        payableAmount:
+          type: number
+        paidAmount:
+          type: number
+        totalRevenue:
+          type: number
+        pendingPayouts:
+          type: integer
+      required:
+        - totalAffiliates
+        - activeAffiliates
+        - totalClicks
+        - totalSignups
+        - totalConversions
+        - holdAmount
+        - payableAmount
+        - paidAmount
+        - totalRevenue
+        - pendingPayouts
+
+    AppStats:
+      type: object
+      properties:
+        appName:
+          type: string
+        clicks:
+          type: integer
+        signups:
+          type: integer
+        conversions:
+          type: integer
+        revenue:
+          type: number
+        commission:
+          type: number
+      required:
+        - appName
+        - clicks
+        - signups
+        - conversions
+        - revenue
+        - commission
+
+    TopAffiliate:
+      type: object
+      properties:
+        affiliateId:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        refCode:
+          type: string
+        totalEarnings:
+          type: number
+        conversions:
+          type: integer
+        clicks:
+          type: integer
+      required:
+        - affiliateId
+        - name
+        - email
+        - refCode
+        - totalEarnings
+        - conversions
+        - clicks
+
+    TimelinePoint:
+      type: object
+      properties:
+        date:
+          type: string
+        earnings:
+          type: number
+        conversions:
+          type: integer
+      required:
+        - date
+        - earnings
+        - conversions
+
+    ReleaseResult:
+      type: object
+      properties:
+        released:
+          type: integer
+        message:
+          type: string
+      required:
+        - released
+        - message
+
+    SystemConfig:
+      type: object
+      properties:
+        commissionType:
+          type: string
+          enum: [fixed, percentage]
+        commissionValue:
+          type: number
+        holdDays:
+          type: integer
+        apiKey:
+          type: string
+      required:
+        - commissionType
+        - commissionValue
+        - holdDays
+        - apiKey
+
+    SystemConfigUpdate:
+      type: object
+      properties:
+        commissionType:
+          type: string
+          enum: [fixed, percentage]
+        commissionValue:
+          type: number
+        holdDays:
+          type: integer

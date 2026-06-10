@@ -1,0 +1,269 @@
+OneStore Apps Affiliate (Universal Multi-PWA Affiliate Engine)
+
+Build a complete production-ready PHP + MySQL affiliate system called:
+
+OneStore Apps Affiliate
+
+This is a universal affiliate tracking engine that supports multiple PWAs (OneTailor, OneSolar, OneSalon, etc.) under one shared affiliate network.
+
+🧠 CORE CONCEPT
+
+This system is NOT app-specific.
+
+It is a global affiliate network layer where:
+
+affiliates are universal (one affiliate = all apps)
+apps are just conversion sources
+affiliate_id is shared across all apps
+revenue is tracked per app but credited to same affiliate
+⚙️ REQUIREMENTS
+Pure PHP (no frameworks)
+MySQL database
+REST-style JSON API
+Works on:
+VPS
+cPanel
+DirectAdmin
+Must be installable via install.php
+No Composer dependency
+📁 PROJECT STRUCTURE
+onestore-affiliate/
+│
+├── api/
+│   ├── click.php
+│   ├── signup.php
+│   ├── conversion.php
+│   ├── stats.php
+│
+├── admin/
+│   ├── index.php
+│   ├── affiliates.php
+│   ├── earnings.php
+│   ├── payouts.php
+│   ├── login.php
+│
+├── core/
+│   ├── db.php
+│   ├── auth.php
+│   ├── affiliate.php
+│   ├── commission.php
+│   ├── payout.php
+│   ├── utils.php
+│
+├── config/
+│   ├── config.php
+│
+├── cron/
+│   ├── payout_processor.php
+│
+├── install.php
+├── database.sql
+└── index.php
+🧠 CORE SYSTEM RULE
+
+Affiliate system is GLOBAL:
+
+One affiliate can promote ANY app
+Apps are only labels for tracking
+Commission is tied to affiliate_id, not app
+🧾 DATABASE DESIGN
+affiliates
+id INT AUTO_INCREMENT PRIMARY KEY
+name VARCHAR(255)
+email VARCHAR(255)
+ref_code VARCHAR(50) UNIQUE
+created_at DATETIME
+status ENUM('active','suspended')
+referral_events
+id INT AUTO_INCREMENT PRIMARY KEY
+affiliate_id INT
+ref_code VARCHAR(50)
+app_name VARCHAR(100)
+event_type ENUM('click','signup')
+user_id VARCHAR(255)
+ip_address VARCHAR(100)
+created_at DATETIME
+conversions
+id INT AUTO_INCREMENT PRIMARY KEY
+affiliate_id INT
+user_id VARCHAR(255)
+app_name VARCHAR(100)
+payment_id VARCHAR(255) UNIQUE
+amount DECIMAL(10,2)
+commission DECIMAL(10,2)
+status ENUM('HOLD','PAYABLE','PAID')
+conversion_date DATETIME
+hold_end_date DATETIME
+payouts
+id INT AUTO_INCREMENT PRIMARY KEY
+affiliate_id INT
+amount DECIMAL(10,2)
+status ENUM('PENDING','PAID')
+created_at DATETIME
+paid_at DATETIME
+🔌 API REQUIREMENTS (JSON ONLY)
+
+All API endpoints must:
+
+accept JSON input
+return JSON output
+validate API key header
+
+Header:
+
+X-API-KEY: your-secret-key
+1. CLICK TRACKING API
+POST /api/click.php
+{
+  "ref_code": "TLR-A7K3",
+  "app_name": "onetailor",
+  "ip": "auto"
+}
+2. SIGNUP API
+POST /api/signup.php
+{
+  "ref_code": "TLR-A7K3",
+  "user_id": "12345",
+  "app_name": "onesolar"
+}
+
+Rules:
+
+assign FIRST-TOUCH attribution
+store affiliate_id relation globally
+ignore duplicate attribution
+3. CONVERSION API (CRITICAL)
+POST /api/conversion.php
+{
+  "user_id": "12345",
+  "payment_id": "PAY_98765",
+  "amount": 1500,
+  "app_name": "onetailor"
+}
+
+Logic:
+
+verify payment_id uniqueness
+find user referral → affiliate_id
+calculate commission
+create conversion record
+set status = HOLD
+set hold_end_date = NOW + 14 DAYS
+4. STATS API
+POST /api/stats.php
+
+Return:
+
+total clicks
+total signups
+total conversions
+earnings:
+HOLD
+PAYABLE
+PAID
+
+Used for affiliate dashboard.
+
+🔐 AUTH SYSTEM
+
+Create:
+
+core/auth.php
+
+Must:
+
+validate API key
+block unauthorized requests
+secure all endpoints
+💰 COMMISSION SYSTEM
+
+In config/config.php:
+
+$config = [
+  'commission_type' => 'fixed',
+  'commission_value' => 500,
+  'hold_days' => 14,
+  'api_key' => 'GENERATED_SECRET'
+];
+
+Rules:
+
+fixed OR percentage support
+global across ALL apps
+app_name only for analytics
+⏳ 14-DAY HOLD SYSTEM
+
+When conversion occurs:
+
+status = HOLD
+hold_end_date = conversion_date + 14 days
+
+Cron job:
+
+cron/payout_processor.php
+scan HOLD records
+if hold expired:
+→ move to PAYABLE
+🧑‍💻 ADMIN DASHBOARD
+
+Must include:
+
+Dashboard
+total affiliates
+total conversions
+revenue overview
+Affiliates page
+list affiliates
+referral codes
+performance metrics
+Earnings page
+HOLD / PAYABLE / PAID filtering
+Payout page
+manual payout marking
+export CSV
+🌍 MULTI-PWA SUPPORT (IMPORTANT)
+
+Every request includes:
+
+"app_name": "onetailor"
+
+Apps supported:
+
+OneTailor
+OneSolar
+OneSalon
+future apps
+
+System must:
+
+treat apps as tracking labels only
+NOT separate affiliate systems
+🔁 FULL FLOW
+Affiliate shares link
+click.php logs event
+user signs up → signup.php assigns affiliate
+user pays → conversion.php triggers commission
+system holds earnings for 14 days
+cron releases payout
+admin marks paid
+🚀 DEPLOYMENT REQUIREMENTS
+
+System must:
+
+run after simple upload to server
+install via install.php
+no frameworks
+no build tools
+work on cPanel, VPS, DirectAdmin
+🎯 FINAL OUTPUT
+
+Generate full working system including:
+
+all PHP backend files
+MySQL schema
+install script
+admin dashboard UI
+API endpoints
+secure authentication
+cron job system
+production-ready logic
