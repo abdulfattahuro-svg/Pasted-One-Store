@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Plus, Pencil, Trash2, Globe, Image, Video, ChevronDown, ChevronUp,
-  ToggleLeft, ToggleRight, Package, ExternalLink, FileText, Tag, Zap, X,
+  ToggleLeft, ToggleRight, Package, ExternalLink, FileText, Tag, Zap, X, Trophy,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -15,6 +15,7 @@ type Product = {
   commissionType: string | null; commissionValue: number | null;
   recurringEnabled: boolean; recurringPercentage: number | null;
   holdPeriodDays: number | null;
+  excludeFromLeaderboard: boolean;
   createdAt: string; updatedAt: string;
 };
 
@@ -68,6 +69,7 @@ const EMPTY_FORM = {
   promoText: "", imageUrls: "", videoUrl: "", active: true, category: "pwa",
   commissionType: "", commissionValue: "", recurringEnabled: false,
   recurringPercentage: "", holdPeriodDays: "",
+  excludeFromLeaderboard: false,
 };
 
 type FormState = typeof EMPTY_FORM;
@@ -85,6 +87,7 @@ function ProductForm({ initial, onSave, onCancel, isSaving }: {
     commissionValue: initial?.commissionValue !== null && initial?.commissionValue !== undefined ? String(initial.commissionValue) : "",
     recurringPercentage: initial?.recurringPercentage !== null && initial?.recurringPercentage !== undefined ? String(initial.recurringPercentage) : "",
     holdPeriodDays: initial?.holdPeriodDays !== null && initial?.holdPeriodDays !== undefined ? String(initial.holdPeriodDays) : "",
+    excludeFromLeaderboard: initial?.excludeFromLeaderboard ?? false,
   });
   const set = (k: keyof FormState, v: string | boolean) => setForm(f => ({ ...f, [k]: v }));
   const autoSlug = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
@@ -192,19 +195,36 @@ function ProductForm({ initial, onSave, onCancel, isSaving }: {
           className="w-full bg-background border border-border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50" placeholder="https://youtube.com/embed/..." />
       </div>
 
-      <div className="flex items-center justify-between pt-1">
+      {/* Toggles row */}
+      <div className="flex items-center gap-6 pt-1">
         <label className="flex items-center gap-2 cursor-pointer">
           <span className="text-xs text-muted-foreground">Active</span>
           <button type="button" onClick={() => set("active", !form.active)} className={`transition-colors ${form.active ? "text-primary" : "text-muted-foreground"}`}>
             {form.active ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
           </button>
         </label>
-        <div className="flex gap-2">
-          <button type="button" onClick={onCancel} className="text-xs px-3 py-1.5 rounded border border-border text-muted-foreground hover:bg-accent transition-colors">Cancel</button>
-          <button type="submit" disabled={isSaving} className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors font-medium">
-            {isSaving ? "Saving..." : "Save Product"}
+        <label className="flex items-center gap-2 cursor-pointer">
+          <Trophy className="w-3.5 h-3.5 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">Exclude from leaderboard</span>
+          <button type="button" onClick={() => set("excludeFromLeaderboard", !form.excludeFromLeaderboard)}
+            className={`transition-colors ${form.excludeFromLeaderboard ? "text-amber-400" : "text-muted-foreground"}`}>
+            {form.excludeFromLeaderboard ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
           </button>
+        </label>
+      </div>
+
+      {form.excludeFromLeaderboard && (
+        <div className="flex items-start gap-2 bg-amber-500/5 border border-amber-500/20 rounded p-2.5 -mt-2">
+          <Trophy className="w-3 h-3 text-amber-400 flex-shrink-0 mt-0.5" />
+          <p className="text-[10px] text-amber-400">This product's clicks and conversions will not count toward affiliate rankings.</p>
         </div>
+      )}
+
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onCancel} className="text-xs px-3 py-1.5 rounded border border-border text-muted-foreground hover:bg-accent transition-colors">Cancel</button>
+        <button type="submit" disabled={isSaving} className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors font-medium">
+          {isSaving ? "Saving..." : "Save Product"}
+        </button>
       </div>
     </form>
   );
@@ -292,7 +312,7 @@ function AssetManager({ productId }: { productId: number }) {
   );
 }
 
-function commissionSummary(product: Product, globalCommission?: { type: string; value: string }) {
+function commissionSummary(product: Product) {
   if (!product.commissionType) return "Global default";
   const type = COMMISSION_TYPES.find(c => c.value === product.commissionType)?.label ?? product.commissionType;
   const val = product.commissionValue !== null ? product.commissionValue : null;
@@ -325,6 +345,7 @@ export default function Products() {
       recurringPercentage: d.recurringPercentage !== "" ? Number(d.recurringPercentage) : null,
       holdPeriodDays: d.holdPeriodDays !== "" ? Number(d.holdPeriodDays) : null,
       landingPageUrl: d.landingPageUrl || null,
+      excludeFromLeaderboard: d.excludeFromLeaderboard,
     };
   }
 
@@ -348,6 +369,11 @@ export default function Products() {
 
   const toggleActive = (p: Product) => {
     apiFetch(`/products/${p.id}`, { method: "PATCH", body: JSON.stringify({ active: !p.active }) })
+      .then(() => qc.invalidateQueries({ queryKey: ["products"] }));
+  };
+
+  const toggleLeaderboardExclusion = (p: Product) => {
+    apiFetch(`/products/${p.id}`, { method: "PATCH", body: JSON.stringify({ excludeFromLeaderboard: !p.excludeFromLeaderboard }) })
       .then(() => qc.invalidateQueries({ queryKey: ["products"] }));
   };
 
@@ -420,28 +446,35 @@ export default function Products() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-semibold text-sm">{product.name}</p>
-                          <span className="text-[10px] font-mono text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">{product.slug}</span>
                           <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${cat.color}`}>{cat.label}</span>
-                          {!product.active && <span className="text-[10px] text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">inactive</span>}
+                          <span className="text-[10px] font-mono text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">{product.slug}</span>
+                          {product.excludeFromLeaderboard && (
+                            <span className="flex items-center gap-0.5 text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded">
+                              <Trophy className="w-2.5 h-2.5" /> excl. rankings
+                            </span>
+                          )}
                         </div>
-                        <div className="flex items-center gap-3 mt-0.5">
-                          <p className="text-xs text-muted-foreground truncate">{product.websiteUrl}</p>
-                          <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                            <Zap className="w-3 h-3" />{commissionSummary(product)}
-                          </span>
+                        {product.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{product.description}</p>}
+                        <div className="mt-1 flex items-center gap-3 text-[10px] text-muted-foreground">
+                          <span className="flex items-center gap-1"><Globe className="w-3 h-3" />{product.websiteUrl}</span>
+                          <span className="flex items-center gap-1"><Tag className="w-3 h-3" />{commissionSummary(product)}</span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        {product.imageUrls.length > 0 && <Image className="w-3.5 h-3.5 text-muted-foreground" />}
-                        {product.videoUrl && <Video className="w-3.5 h-3.5 text-muted-foreground" />}
-                        <button onClick={() => toggleActive(product)} className={`transition-colors ${product.active ? "text-primary" : "text-muted-foreground"}`}>
-                          {product.active ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => toggleLeaderboardExclusion(product)}
+                          title={product.excludeFromLeaderboard ? "Include in rankings" : "Exclude from rankings"}
+                          className={`p-1.5 rounded hover:bg-accent transition-colors ${product.excludeFromLeaderboard ? "text-amber-400" : "text-muted-foreground"}`}
+                        >
+                          <Trophy className="w-3.5 h-3.5" />
                         </button>
-                        <button onClick={() => { setEditId(product.id); setExpanded(null); }} className="p-1.5 rounded hover:bg-accent transition-colors text-muted-foreground hover:text-foreground">
+                        <button onClick={() => toggleActive(product)} className={`p-1.5 rounded hover:bg-accent transition-colors ${product.active ? "text-primary" : "text-muted-foreground"}`}>
+                          {product.active ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+                        </button>
+                        <button onClick={() => { setEditId(product.id); setShowCreate(false); }} className="p-1.5 rounded hover:bg-accent transition-colors text-muted-foreground hover:text-foreground">
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
-                        <button onClick={() => { if (confirm(`Delete "${product.name}"?`)) deleteProduct.mutate(product.id); }}
-                          className="p-1.5 rounded hover:bg-destructive/10 transition-colors text-muted-foreground hover:text-destructive">
+                        <button onClick={() => deleteProduct.mutate(product.id)} className="p-1.5 rounded hover:bg-accent transition-colors text-muted-foreground hover:text-destructive">
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                         <button onClick={() => setExpanded(expanded === product.id ? null : product.id)} className="p-1.5 rounded hover:bg-accent transition-colors text-muted-foreground">
@@ -451,29 +484,14 @@ export default function Products() {
                     </div>
 
                     {expanded === product.id && (
-                      <div className="px-5 pb-5 pt-0 border-t border-border space-y-4">
-                        {product.description && <p className="text-xs text-muted-foreground pt-3">{product.description}</p>}
-
-                        <div className="grid grid-cols-2 gap-3 text-xs">
-                          {product.landingPageUrl && (
-                            <div>
-                              <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Landing Page</p>
-                              <a href={product.landingPageUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline flex items-center gap-1">
-                                <ExternalLink className="w-3 h-3" />{product.landingPageUrl}
-                              </a>
-                            </div>
-                          )}
-                          <div>
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Commission</p>
-                            <div className="space-y-0.5">
-                              <p><span className="text-muted-foreground">Type:</span> {COMMISSION_TYPES.find(c => c.value === (product.commissionType ?? ""))?.label ?? "Global default"}</p>
-                              {product.commissionValue !== null && <p><span className="text-muted-foreground">Value:</span> {product.commissionValue}</p>}
-                              {product.recurringEnabled && product.recurringPercentage !== null && <p><span className="text-muted-foreground">Recurring:</span> {product.recurringPercentage}%</p>}
-                              {product.holdPeriodDays !== null && <p><span className="text-muted-foreground">Hold period:</span> {product.holdPeriodDays} days</p>}
-                            </div>
+                      <div className="border-t border-border px-5 py-4 space-y-4">
+                        {product.landingPageUrl && (
+                          <div className="flex items-center gap-2 text-xs">
+                            <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+                            <span className="text-muted-foreground">Landing:</span>
+                            <a href={product.landingPageUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline truncate">{product.landingPageUrl}</a>
                           </div>
-                        </div>
-
+                        )}
                         {product.promoText && (
                           <div>
                             <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Promo Text</p>
@@ -482,21 +500,22 @@ export default function Products() {
                         )}
                         {product.imageUrls.length > 0 && (
                           <div>
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Images</p>
+                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-2">Images ({product.imageUrls.length})</p>
                             <div className="flex gap-2 flex-wrap">
                               {product.imageUrls.map((url, i) => (
-                                <img key={i} src={url} alt="" className="h-16 w-24 object-cover rounded border border-border" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                                <a key={i} href={url} target="_blank" rel="noreferrer">
+                                  <img src={url} alt="" className="h-16 w-24 object-cover rounded border border-border hover:opacity-80 transition-opacity" onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                                </a>
                               ))}
                             </div>
                           </div>
                         )}
                         {product.videoUrl && (
-                          <div>
-                            <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Video</p>
-                            <a href={product.videoUrl} target="_blank" rel="noreferrer" className="text-xs text-primary hover:underline">{product.videoUrl}</a>
+                          <div className="flex items-center gap-2 text-xs">
+                            <Video className="w-3.5 h-3.5 text-muted-foreground" />
+                            <a href={product.videoUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline truncate">{product.videoUrl}</a>
                           </div>
                         )}
-
                         <AssetManager productId={product.id} />
                       </div>
                     )}

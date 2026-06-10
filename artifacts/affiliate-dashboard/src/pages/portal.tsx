@@ -6,7 +6,7 @@ import {
   ArrowRightLeft, Wallet, Eye, EyeOff, AppWindow, Share2,
   MessageCircle, Facebook, Mail, ChevronDown, ChevronUp, Video,
   Sparkles, DollarSign, Users, Zap, Star, X, Send, XCircle,
-  QrCode, MousePointerClick, ShoppingCart, BarChart2
+  QrCode, MousePointerClick, ShoppingCart, BarChart2, Trophy
 } from "lucide-react";
 import QRCode from "qrcode";
 
@@ -41,7 +41,7 @@ type ProgramInfo = { programName: string; programTagline: string; commissionHigh
 type Stats = { clicks: number; signups: number; conversions: number; holdAmount: number; payableAmount: number; paidAmount: number; totalEarnings: number };
 type Conversion = { id: number; appName: string; amount: number; commission: number; status: string; conversionDate: string; holdEndDate: string | null };
 type Payout = { id: number; amount: number; status: string; createdAt: string; paidAt: string | null };
-type Config = { currency: string };
+type Config = { currency: string; leaderboardEnabled?: boolean };
 type App = { id: number; name: string; slug: string; description: string | null; websiteUrl: string; promoText: string | null; imageUrls: string[]; videoUrl: string | null; active: boolean; category: string | null; };
 type ProductStat = {
   productId: number;
@@ -55,6 +55,22 @@ type ProductStat = {
   conversions: number;
   revenue: number;
   commission: number;
+};
+
+type LeaderboardEntry = {
+  rank: number;
+  label: string;
+  isYou: boolean;
+  clicks: number;
+  conversions: number;
+  commission: number;
+};
+
+type LeaderboardData = {
+  enabled: boolean;
+  totalParticipants: number;
+  excludedProducts: string[];
+  entries: LeaderboardEntry[];
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -353,7 +369,7 @@ function AppCard({ app, refCode, stat, currency }: { app: App; refCode: string; 
 // DASHBOARD
 // ─────────────────────────────────────────────────────────────
 function PortalDashboard({ affiliate, onLogout }: { affiliate: Affiliate; onLogout: () => void }) {
-  const [tab, setTab] = useState<"overview" | "apps">("overview");
+  const [tab, setTab] = useState<"overview" | "apps" | "leaderboard">("overview");
   const [copied, setCopied] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(!affiliate.welcomedAt);
   const qc = useQueryClient();
@@ -368,6 +384,11 @@ function PortalDashboard({ affiliate, onLogout }: { affiliate: Affiliate; onLogo
     queryKey: ["portal-product-stats", affiliate.id],
     queryFn: () => apiGet(`/affiliates/${affiliate.id}/product-stats`),
     enabled: tab === "apps",
+  });
+  const { data: leaderboard } = useQuery<LeaderboardData>({
+    queryKey: ["portal-leaderboard", affiliate.refCode],
+    queryFn: () => apiGet(`/stats/leaderboard?ref=${affiliate.refCode}`),
+    enabled: config?.leaderboardEnabled === true && tab === "leaderboard",
   });
 
   const currency = config?.currency ?? "USD";
@@ -411,7 +432,11 @@ function PortalDashboard({ affiliate, onLogout }: { affiliate: Affiliate; onLogo
 
         <div className="border-b border-border px-6">
           <div className="flex gap-0">
-            {[{ key: "overview", label: "Overview" }, { key: "apps", label: `Products${apps?.length ? ` (${apps.length})` : ""}` }].map(t => (
+            {[
+              { key: "overview", label: "Overview" },
+              { key: "apps", label: `Products${apps?.length ? ` (${apps.length})` : ""}` },
+              ...(config?.leaderboardEnabled ? [{ key: "leaderboard", label: "Leaderboard" }] : []),
+            ].map(t => (
               <button key={t.key} onClick={() => setTab(t.key as typeof tab)}
                 className={`text-xs px-4 py-3 border-b-2 transition-colors font-medium ${tab === t.key ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
                 {t.label}
@@ -504,7 +529,7 @@ function PortalDashboard({ affiliate, onLogout }: { affiliate: Affiliate; onLogo
                 </div>
               </div>
             </div>
-          ) : (
+          ) : tab === "apps" ? (
             <div className="space-y-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -529,6 +554,83 @@ function PortalDashboard({ affiliate, onLogout }: { affiliate: Affiliate; onLogo
                     />
                   ))}
                 </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-5">
+              <div>
+                <h2 className="text-sm font-semibold">Affiliate Rankings</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  See how you rank against all active affiliates. All others are shown anonymously.
+                </p>
+              </div>
+
+              {!leaderboard ? (
+                <p className="text-xs text-muted-foreground py-8 text-center">Loading rankings...</p>
+              ) : !leaderboard.enabled ? (
+                <p className="text-xs text-muted-foreground py-8 text-center">Leaderboard is not available.</p>
+              ) : leaderboard.entries.length === 0 ? (
+                <div className="text-center py-16 text-muted-foreground">
+                  <Trophy className="w-8 h-8 mx-auto mb-3 opacity-30" />
+                  <p className="text-sm">No rankings yet. Start earning commissions to appear here!</p>
+                </div>
+              ) : (
+                <>
+                  <div className="bg-card border border-border rounded overflow-hidden">
+                    <div className="grid grid-cols-[40px_1fr_80px_80px_100px] gap-0 px-4 py-2 border-b border-border bg-secondary/50">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">#</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Affiliate</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground text-right">Clicks</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground text-right">Converts</span>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground text-right">Earned</span>
+                    </div>
+                    <div className="divide-y divide-border">
+                      {leaderboard.entries.map(entry => (
+                        <div
+                          key={entry.rank}
+                          className={`grid grid-cols-[40px_1fr_80px_80px_100px] gap-0 px-4 py-3 items-center transition-colors ${
+                            entry.isYou
+                              ? "bg-primary/5 border-l-2 border-l-primary"
+                              : "hover:bg-secondary/30"
+                          }`}
+                        >
+                          <span className={`text-sm font-bold tabular-nums ${
+                            entry.rank === 1 ? "text-amber-400" :
+                            entry.rank === 2 ? "text-slate-300" :
+                            entry.rank === 3 ? "text-orange-400" :
+                            "text-muted-foreground"
+                          }`}>
+                            {entry.rank === 1 ? "🥇" : entry.rank === 2 ? "🥈" : entry.rank === 3 ? "🥉" : `#${entry.rank}`}
+                          </span>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`text-xs font-semibold truncate ${entry.isYou ? "text-primary" : "text-muted-foreground"}`}>
+                              {entry.label}
+                            </span>
+                            {entry.isYou && (
+                              <span className="text-[9px] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20 px-1.5 py-0.5 rounded flex-shrink-0">
+                                You
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-xs tabular-nums text-right text-muted-foreground">{entry.clicks.toLocaleString()}</span>
+                          <span className="text-xs tabular-nums text-right text-muted-foreground">{entry.conversions.toLocaleString()}</span>
+                          <span className={`text-xs tabular-nums text-right font-semibold ${entry.isYou ? "text-primary" : "text-foreground"}`}>
+                            {fmtCurrency(entry.commission, currency)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex items-start gap-3 text-[10px] text-muted-foreground">
+                    <div className="space-y-1">
+                      <p>{leaderboard.totalParticipants} affiliate{leaderboard.totalParticipants !== 1 ? "s" : ""} ranked · sorted by commission earned</p>
+                      {leaderboard.excludedProducts.length > 0 && (
+                        <p>Note: <span className="text-foreground">{leaderboard.excludedProducts.join(", ")}</span> excluded from rankings</p>
+                      )}
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           )}

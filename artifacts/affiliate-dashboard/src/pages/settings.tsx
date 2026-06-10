@@ -4,7 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useState } from "react";
-import { Eye, EyeOff, Copy, CheckCircle, Mail, Server, Globe, Shield, Info, FileText } from "lucide-react";
+import { Eye, EyeOff, Copy, CheckCircle, Mail, Server, Globe, Shield, Info, FileText, Trophy, ToggleLeft, ToggleRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ const CURRENCIES = [
   { code: "USD", label: "USD — US Dollar" },
   { code: "EUR", label: "EUR — Euro" },
   { code: "GBP", label: "GBP — British Pound" },
-  { code: "CAD", label: "CAD — Canadian Dollar" },
+  { code: "CAD", label: "Canadian Dollar" },
   { code: "AUD", label: "AUD — Australian Dollar" },
   { code: "JPY", label: "JPY — Japanese Yen" },
   { code: "SGD", label: "SGD — Singapore Dollar" },
@@ -45,6 +45,75 @@ const formSchema = z.object({
 });
 
 type FormData = z.infer<typeof formSchema>;
+
+async function apiFetch(path: string, options?: RequestInit) {
+  const res = await fetch(`/api${path}`, { headers: { "Content-Type": "application/json" }, credentials: "include", ...options });
+  if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? "Request failed"); }
+  return res.json();
+}
+
+// ─── LEADERBOARD TOGGLE ───────────────────────────────────────
+function LeaderboardSection() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: config } = useQuery<{ leaderboardEnabled?: boolean }>({
+    queryKey: ["config"],
+    queryFn: () => apiFetch("/config"),
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: (enabled: boolean) =>
+      apiFetch("/config", { method: "PATCH", body: JSON.stringify({ leaderboardEnabled: enabled }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["config"] });
+      toast({ title: "Leaderboard setting saved" });
+    },
+    onError: () => toast({ title: "Error saving", variant: "destructive" }),
+  });
+
+  const enabled = config?.leaderboardEnabled ?? false;
+
+  return (
+    <div className="bg-card border border-border rounded p-5 space-y-4">
+      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+        <Trophy className="w-3.5 h-3.5" /> Affiliate Leaderboard
+      </h2>
+
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-1">
+          <p className="text-sm font-medium">Show leaderboard in affiliate portal</p>
+          <p className="text-xs text-muted-foreground">
+            When enabled, affiliates see a ranked tab in their portal showing anonymized performance standings.
+            Rankings are based on total commission earned.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => toggleMutation.mutate(!enabled)}
+          disabled={toggleMutation.isPending}
+          className={`flex-shrink-0 transition-colors ${enabled ? "text-primary" : "text-muted-foreground"}`}
+        >
+          {enabled ? <ToggleRight className="w-7 h-7" /> : <ToggleLeft className="w-7 h-7" />}
+        </button>
+      </div>
+
+      {enabled && (
+        <div className="bg-primary/5 border border-primary/20 rounded p-3 space-y-1.5 text-xs text-muted-foreground">
+          <p className="font-medium text-foreground text-[11px] uppercase tracking-wider">Active — visible to all affiliates</p>
+          <p>✦ Affiliates only see "You" for their own row — all others are shown as "Partner"</p>
+          <p>✦ Rankings are calculated across all products by default</p>
+          <p>✦ Exclude specific products from rankings in the <strong className="text-foreground">Products</strong> page</p>
+        </div>
+      )}
+
+      {!enabled && (
+        <div className="bg-secondary/50 border border-border rounded p-3 text-xs text-muted-foreground">
+          <p>Leaderboard is hidden. Toggle on to show it to affiliates in their portal.</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Settings() {
   const { data: config, isLoading } = useGetConfig();
@@ -369,6 +438,9 @@ export default function Settings() {
         </form>
       </Form>
 
+      {/* Leaderboard */}
+      <LeaderboardSection />
+
       {/* API Docs */}
       <div className="bg-card border border-border rounded p-5">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">API Endpoints</h2>
@@ -378,8 +450,9 @@ export default function Settings() {
             ["POST", "/api/events/signup", "First-touch attribution"],
             ["POST", "/api/conversions", "Record payment conversion"],
             ["GET", "/api/stats/dashboard", "Dashboard summary"],
+            ["GET", "/api/stats/leaderboard?ref=CODE", "Affiliate leaderboard"],
             ["POST", "/api/cron/release-holds", "Release expired holds"],
-            ["GET", "/api/track?ref=CODE&app=APP", "Referral click tracking (with redirect)"],
+            ["POST", "/api/track/product", "Product referral tracking (with redirect URL)"],
           ].map(([method, path, desc]) => (
             <div key={path} className="flex items-center gap-2">
               <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${method === "GET" ? "bg-blue-500/10 text-blue-400" : "bg-amber-500/10 text-amber-400"}`}>{method}</span>
@@ -404,12 +477,6 @@ const TEMPLATE_LABELS: Record<string, string> = {
   rejection: "Application Rejected",
   password_reset: "Password Reset",
 };
-
-async function apiFetch(path: string, options?: RequestInit) {
-  const res = await fetch(`/api${path}`, { headers: { "Content-Type": "application/json" }, credentials: "include", ...options });
-  if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? "Request failed"); }
-  return res.json();
-}
 
 function EmailTemplateCard({ template, onSave }: { template: EmailTemplate; onSave: (name: string, subject: string, body: string) => Promise<void> }) {
   const [subject, setSubject] = useState(template.subject);
@@ -450,7 +517,7 @@ function EmailTemplateCard({ template, onSave }: { template: EmailTemplate; onSa
           />
         </div>
         <div className="space-y-1">
-          <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Body (HTML)</label>
+          <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Body</label>
           <textarea
             value={body}
             onChange={e => setBody(e.target.value)}
@@ -458,14 +525,14 @@ function EmailTemplateCard({ template, onSave }: { template: EmailTemplate; onSa
             className="w-full px-3 py-2 text-xs font-mono bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 resize-y"
           />
         </div>
-        <p className="text-[10px] text-muted-foreground">Variables: <code className="bg-secondary px-1 rounded">{"{{name}}"}</code> <code className="bg-secondary px-1 rounded">{"{{programName}}"}</code> <code className="bg-secondary px-1 rounded">{"{{link}}"}</code></p>
-        <div className="flex justify-end">
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] text-muted-foreground">Last updated: {new Date(template.updatedAt).toLocaleDateString()}</p>
           <button
             onClick={handleSave}
             disabled={!isDirty || saving}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-primary text-primary-foreground rounded font-semibold hover:opacity-90 disabled:opacity-40 transition-opacity"
+            className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-40 transition-colors font-medium"
           >
-            {saved ? <><CheckCircle className="w-3 h-3" /> Saved</> : saving ? "Saving..." : "Save Template"}
+            {saving ? "Saving..." : saved ? "Saved ✓" : "Save Template"}
           </button>
         </div>
       </div>
@@ -474,36 +541,32 @@ function EmailTemplateCard({ template, onSave }: { template: EmailTemplate; onSa
 }
 
 function EmailTemplatesSection() {
-  const { data: templates, refetch } = useQuery<EmailTemplate[]>({
+  const { toast } = useToast();
+  const { data: templates = [], isLoading } = useQuery<EmailTemplate[]>({
     queryKey: ["email-templates"],
     queryFn: () => apiFetch("/email-templates"),
   });
 
-  const saveMutation = useMutation({
-    mutationFn: ({ name, subject, body }: { name: string; subject: string; body: string }) =>
-      apiFetch(`/email-templates/${name}`, { method: "PATCH", body: JSON.stringify({ subject, body }) }),
-    onSuccess: () => refetch(),
-  });
+  const saveTemplate = async (name: string, subject: string, body: string) => {
+    await apiFetch(`/email-templates/${name}`, {
+      method: "PUT",
+      body: JSON.stringify({ subject, body }),
+    });
+  };
+
+  if (isLoading) return null;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div>
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Email Templates</h2>
-        <p className="text-[10px] text-muted-foreground mt-1">Customize the emails sent to affiliates. Supports HTML and template variables.</p>
+        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+          <Mail className="w-3.5 h-3.5" /> Email Templates
+        </h2>
+        <p className="text-xs text-muted-foreground mt-1">Customize the emails sent to affiliates. Use {`{{variables}}`} for dynamic content.</p>
       </div>
-      {!templates ? (
-        <p className="text-xs text-muted-foreground">Loading templates...</p>
-      ) : (
-        <div className="space-y-4">
-          {templates.map(tpl => (
-            <EmailTemplateCard
-              key={tpl.name}
-              template={tpl}
-              onSave={(name, subject, body) => saveMutation.mutateAsync({ name, subject, body })}
-            />
-          ))}
-        </div>
-      )}
+      {templates.map(t => (
+        <EmailTemplateCard key={t.name} template={t} onSave={saveTemplate} />
+      ))}
     </div>
   );
 }

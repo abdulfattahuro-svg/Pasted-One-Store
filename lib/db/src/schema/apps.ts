@@ -17,6 +17,8 @@ export const productsTable = pgTable("apps", {
   recurringEnabled: boolean("recurring_enabled").notNull().default(false),
   recurringPercentage: decimal("recurring_percentage", { precision: 5, scale: 2 }),
   holdPeriodDays: integer("hold_period_days"),
+  // Leaderboard: exclude this product's stats from the ranking calculation
+  excludeFromLeaderboard: boolean("exclude_from_leaderboard").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

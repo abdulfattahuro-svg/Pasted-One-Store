@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { and, lte, eq } from "drizzle-orm";
-import { db, affiliatesTable, referralEventsTable, conversionsTable, payoutsTable, productsTable } from "@workspace/db";
+import { db, affiliatesTable, referralEventsTable, conversionsTable, payoutsTable, productsTable, systemConfigTable } from "@workspace/db";
 
 const router = Router();
 
@@ -35,7 +35,6 @@ async function buildProductStats() {
   const products = await db.select().from(productsTable);
 
   return products.map(product => {
-    // Match by productSlug (new) or legacy appName (backward compat)
     const productEvents = events.filter(e =>
       e.productSlug === product.slug || e.appName === product.slug
     );
@@ -50,6 +49,7 @@ async function buildProductStats() {
       productSlug: product.slug,
       category: product.category,
       active: product.active,
+      excludeFromLeaderboard: product.excludeFromLeaderboard,
       clicks: productEvents.filter(e => e.eventType === "click").length,
       signups: productEvents.filter(e => e.eventType === "signup").length,
       conversions: productConversions.length,
@@ -112,6 +112,83 @@ router.get("/stats/earnings-timeline", async (req, res) => {
   }
 
   return res.json(Object.entries(days).map(([date, v]) => ({ date, ...v })));
+});
+
+// ─── AFFILIATE LEADERBOARD ────────────────────────────────────
+// Returns anonymized rankings. Pass `ref=REFCODE` to highlight the current affiliate.
+// Respects excludeFromLeaderboard on products and the global leaderboard_enabled toggle.
+router.get("/stats/leaderboard", async (req, res) => {
+  const refCode = (req.query.ref as string | undefined)?.toUpperCase();
+
+  const [config] = await db.select().from(systemConfigTable);
+  if (!config?.leaderboardEnabled) {
+    return res.json({ enabled: false, entries: [] });
+  }
+
+  const products = await db.select().from(productsTable);
+  const excludedSlugs = new Set(products.filter(p => p.excludeFromLeaderboard).map(p => p.slug));
+  const excludedIds = new Set(
+    products.filter(p => p.excludeFromLeaderboard).map(p => p.id)
+  );
+
+  const affiliates = await db.select()
+    .from(affiliatesTable)
+    .where(eq(affiliatesTable.status, "active"));
+
+  const allEvents = await db.select().from(referralEventsTable);
+  const allConversions = await db.select().from(conversionsTable);
+
+  // Filter out events/conversions from excluded products
+  function isExcluded(productId: number | null, productSlug: string | null, appName: string) {
+    if (productId && excludedIds.has(productId)) return true;
+    if (productSlug && excludedSlugs.has(productSlug)) return true;
+    if (!productId && !productSlug && excludedSlugs.has(appName)) return true;
+    return false;
+  }
+
+  const filteredEvents = allEvents.filter(e =>
+    !isExcluded(e.productId ?? null, e.productSlug ?? null, e.appName)
+  );
+  const filteredConversions = allConversions.filter(c =>
+    !isExcluded(c.productId ?? null, c.productSlug ?? null, c.appName)
+  );
+
+  // Score each active affiliate
+  const scored = affiliates.map(a => ({
+    affiliateId: a.id,
+    refCode: a.refCode,
+    clicks: filteredEvents.filter(e => e.affiliateId === a.id && e.eventType === "click").length,
+    conversions: filteredConversions.filter(c => c.affiliateId === a.id).length,
+    commission: filteredConversions
+      .filter(c => c.affiliateId === a.id)
+      .reduce((s, c) => s + Number(c.commission), 0),
+  }));
+
+  // Sort: commission desc → conversions desc → clicks desc
+  const ranked = scored.sort(
+    (a, b) => b.commission - a.commission || b.conversions - a.conversions || b.clicks - a.clicks
+  );
+
+  const entries = ranked.map((entry, i) => ({
+    rank: i + 1,
+    label: refCode && entry.refCode === refCode ? "You" : "Partner",
+    isYou: !!(refCode && entry.refCode === refCode),
+    clicks: entry.clicks,
+    conversions: entry.conversions,
+    commission: entry.commission,
+  }));
+
+  // If caller provided a refCode and they're not in the list (shouldn't happen but safety net)
+  const excludedProductNames = products
+    .filter(p => p.excludeFromLeaderboard)
+    .map(p => p.name);
+
+  return res.json({
+    enabled: true,
+    totalParticipants: entries.length,
+    excludedProducts: excludedProductNames,
+    entries,
+  });
 });
 
 router.post("/cron/release-holds", async (req, res) => {

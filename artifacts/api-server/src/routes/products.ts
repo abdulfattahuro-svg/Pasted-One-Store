@@ -41,12 +41,14 @@ router.post("/products", async (req, res) => {
     name, slug, description, websiteUrl, landingPageUrl, promoText,
     imageUrls, videoUrl, active, category,
     commissionType, commissionValue, recurringEnabled, recurringPercentage, holdPeriodDays,
+    excludeFromLeaderboard,
   } = req.body as {
     name?: string; slug?: string; description?: string; websiteUrl?: string;
     landingPageUrl?: string; promoText?: string; imageUrls?: string[];
     videoUrl?: string; active?: boolean; category?: string;
     commissionType?: string; commissionValue?: number; recurringEnabled?: boolean;
     recurringPercentage?: number; holdPeriodDays?: number;
+    excludeFromLeaderboard?: boolean;
   };
 
   if (!name || !slug || !websiteUrl) {
@@ -77,6 +79,7 @@ router.post("/products", async (req, res) => {
     recurringEnabled: recurringEnabled ?? false,
     recurringPercentage: recurringPercentage !== undefined ? String(recurringPercentage) : null,
     holdPeriodDays: holdPeriodDays ?? null,
+    excludeFromLeaderboard: excludeFromLeaderboard ?? false,
   }).returning();
 
   return res.status(201).json(formatProduct(row));
@@ -98,12 +101,14 @@ router.patch("/products/:id", async (req, res) => {
     name, slug, description, websiteUrl, landingPageUrl, promoText,
     imageUrls, videoUrl, active, category,
     commissionType, commissionValue, recurringEnabled, recurringPercentage, holdPeriodDays,
+    excludeFromLeaderboard,
   } = req.body as {
     name?: string; slug?: string; description?: string; websiteUrl?: string;
     landingPageUrl?: string; promoText?: string; imageUrls?: string[];
     videoUrl?: string; active?: boolean; category?: string;
     commissionType?: string | null; commissionValue?: number | null;
     recurringEnabled?: boolean; recurringPercentage?: number | null; holdPeriodDays?: number | null;
+    excludeFromLeaderboard?: boolean;
   };
 
   if (category !== undefined && !VALID_CATEGORIES.includes(category as typeof VALID_CATEGORIES[number])) {
@@ -129,6 +134,7 @@ router.patch("/products/:id", async (req, res) => {
   if (recurringEnabled !== undefined) updates.recurringEnabled = recurringEnabled;
   if (recurringPercentage !== undefined) updates.recurringPercentage = recurringPercentage !== null ? String(recurringPercentage) : null;
   if (holdPeriodDays !== undefined) updates.holdPeriodDays = holdPeriodDays;
+  if (excludeFromLeaderboard !== undefined) updates.excludeFromLeaderboard = excludeFromLeaderboard;
 
   const [row] = await db.update(productsTable).set(updates).where(eq(productsTable.id, id)).returning();
   if (!row) return res.status(404).json({ error: "Product not found" });

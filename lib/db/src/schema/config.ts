@@ -1,4 +1,4 @@
-import { pgTable, serial, varchar, decimal, integer, text } from "drizzle-orm/pg-core";
+import { pgTable, serial, varchar, decimal, integer, text, boolean } from "drizzle-orm/pg-core";
 
 export const systemConfigTable = pgTable("system_config", {
   id: serial("id").primaryKey(),
@@ -25,6 +25,9 @@ export const systemConfigTable = pgTable("system_config", {
   programTagline: text("program_tagline").default("Earn real money sharing apps you believe in."),
   commissionHighlight: varchar("commission_highlight", { length: 255 }).default("Earn up to $500 per referral"),
   programDetails: text("program_details").default("Join hundreds of affiliates earning passive income every month. No experience needed — just share your link and watch your earnings grow."),
+
+  // Leaderboard feature
+  leaderboardEnabled: boolean("leaderboard_enabled").notNull().default(false),
 });
 
 export type SystemConfig = typeof systemConfigTable.$inferSelect;

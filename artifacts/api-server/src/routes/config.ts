@@ -28,6 +28,7 @@ async function ensureConfig() {
     programTagline: "Earn real money sharing apps you believe in.",
     commissionHighlight: "Earn up to $500 per referral",
     programDetails: "Join hundreds of affiliates earning passive income every month. No experience needed — just share your link and watch your earnings grow.",
+    leaderboardEnabled: false,
   }).returning();
   return created;
 }
@@ -64,6 +65,7 @@ router.patch("/config", async (req, res) => {
   if (typeof raw.programTagline === "string") updates.programTagline = raw.programTagline || null;
   if (typeof raw.commissionHighlight === "string") updates.commissionHighlight = raw.commissionHighlight || null;
   if (typeof raw.programDetails === "string") updates.programDetails = raw.programDetails || null;
+  if (typeof raw.leaderboardEnabled === "boolean") updates.leaderboardEnabled = raw.leaderboardEnabled;
 
   const [row] = await db.update(systemConfigTable)
     .set(updates)
