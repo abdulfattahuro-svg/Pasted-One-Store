@@ -1,6 +1,6 @@
 import { useGetDashboardStats, useGetStatsByApp, useGetTopAffiliates, useGetEarningsTimeline, useReleaseHolds } from "@workspace/api-client-react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid } from "recharts";
-import { ArrowUpRight, Users, MousePointer, UserPlus, TrendingUp, Clock, CheckCircle, DollarSign, RefreshCw } from "lucide-react";
+import { ArrowUpRight, Users, MousePointer, UserPlus, TrendingUp, Clock, CheckCircle, DollarSign, RefreshCw, UserCheck } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 function StatCard({ label, value, sub, icon: Icon, color = "text-primary" }: {
@@ -86,6 +86,12 @@ export default function Dashboard() {
         <StatCard label="Signups" value={fmt(stats?.totalSignups ?? 0)} icon={UserPlus} color="text-violet-400" />
         <StatCard label="Conversions" value={fmt(stats?.totalConversions ?? 0)} icon={ArrowUpRight} color="text-primary" />
         <StatCard label="Total Revenue" value={fmtCurrency(stats?.totalRevenue ?? 0)} icon={DollarSign} color="text-amber-400" />
+      </div>
+
+      {/* Leads stats */}
+      <div className="grid grid-cols-2 gap-3">
+        <StatCard label="Total Leads" value={fmt((stats as Record<string, number> | undefined)?.totalLeads ?? 0)} sub="all time" icon={UserCheck} color="text-cyan-400" />
+        <StatCard label="Leads This Month" value={fmt((stats as Record<string, number> | undefined)?.leadsThisMonth ?? 0)} sub="current month" icon={UserCheck} color="text-teal-400" />
       </div>
 
       {/* Earnings breakdown */}

@@ -1,14 +1,22 @@
 import { Router } from "express";
-import { and, lte, eq } from "drizzle-orm";
+import { and, lte, eq, gte } from "drizzle-orm";
 import { db, affiliatesTable, referralEventsTable, conversionsTable, payoutsTable, productsTable, systemConfigTable } from "@workspace/db";
+import { leadsTable } from "@workspace/db";
 
 const router = Router();
 
 router.get("/stats/dashboard", async (req, res) => {
-  const affiliates = await db.select().from(affiliatesTable);
-  const events = await db.select().from(referralEventsTable);
-  const conversions = await db.select().from(conversionsTable);
-  const payouts = await db.select().from(payoutsTable);
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const [affiliates, events, conversions, payouts, leads, leadsThisMonth] = await Promise.all([
+    db.select().from(affiliatesTable),
+    db.select().from(referralEventsTable),
+    db.select().from(conversionsTable),
+    db.select().from(payoutsTable),
+    db.select().from(leadsTable),
+    db.select().from(leadsTable).where(gte(leadsTable.createdAt, startOfMonth)),
+  ]);
 
   const holdAmount = conversions.filter(c => c.status === "HOLD").reduce((s, c) => s + Number(c.commission), 0);
   const payableAmount = conversions.filter(c => c.status === "PAYABLE").reduce((s, c) => s + Number(c.commission), 0);
@@ -26,6 +34,8 @@ router.get("/stats/dashboard", async (req, res) => {
     paidAmount,
     totalRevenue,
     pendingPayouts: payouts.filter(p => p.status === "PENDING").length,
+    totalLeads: leads.length,
+    leadsThisMonth: leadsThisMonth.length,
   });
 });
 

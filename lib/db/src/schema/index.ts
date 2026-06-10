@@ -8,3 +8,4 @@ export * from "./product_assets";
 export * from "./password_reset_tokens";
 export * from "./onboarding";
 export * from "./email_templates";
+export * from "./leads";

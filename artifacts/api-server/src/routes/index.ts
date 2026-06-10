@@ -11,6 +11,7 @@ import appsRouter from "./apps";
 import productsRouter from "./products";
 import trackingRouter from "./tracking";
 import emailTemplatesRouter, { seedEmailTemplates } from "./email_templates";
+import leadsRouter from "./leads";
 
 const router: IRouter = Router();
 
@@ -26,6 +27,7 @@ router.use(appsRouter);
 router.use(productsRouter);
 router.use(trackingRouter);
 router.use(emailTemplatesRouter);
+router.use(leadsRouter);
 
 seedEmailTemplates().catch(() => {});
 

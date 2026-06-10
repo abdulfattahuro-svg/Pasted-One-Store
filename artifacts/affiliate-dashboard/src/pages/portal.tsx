@@ -6,7 +6,7 @@ import {
   ArrowRightLeft, Wallet, Eye, EyeOff, AppWindow, Share2,
   MessageCircle, Facebook, Mail, ChevronDown, ChevronUp, Video,
   Sparkles, DollarSign, Users, Zap, Star, X, Send, XCircle,
-  QrCode, MousePointerClick, ShoppingCart, BarChart2, Trophy
+  QrCode, MousePointerClick, ShoppingCart, BarChart2, Trophy, Search
 } from "lucide-react";
 import QRCode from "qrcode";
 
@@ -55,6 +55,20 @@ type ProductStat = {
   conversions: number;
   revenue: number;
   commission: number;
+};
+
+type PortalLead = {
+  id: number;
+  productId: number | null;
+  productSlug: string | null;
+  fullName: string;
+  phone: string | null;
+  email: string | null;
+  notes: string | null;
+  status: "new" | "contacted" | "interested" | "won" | "lost";
+  source: string;
+  createdAt: string;
+  product: { id: number; name: string; slug: string } | null;
 };
 
 type LeaderboardEntry = {
@@ -366,10 +380,212 @@ function AppCard({ app, refCode, stat, currency }: { app: App; refCode: string; 
 }
 
 // ─────────────────────────────────────────────────────────────
+// PORTAL LEADS TAB
+// ─────────────────────────────────────────────────────────────
+const LEAD_STATUS_META: Record<string, { label: string; color: string }> = {
+  new: { label: "New", color: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
+  contacted: { label: "Contacted", color: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
+  interested: { label: "Interested", color: "bg-violet-500/10 text-violet-400 border-violet-500/20" },
+  won: { label: "Won", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
+  lost: { label: "Lost", color: "bg-red-500/10 text-red-400 border-red-500/20" },
+};
+
+function LeadStatusBadge({ status }: { status: string }) {
+  const meta = LEAD_STATUS_META[status] ?? { label: status, color: "bg-secondary text-muted-foreground border-border" };
+  return (
+    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded border uppercase tracking-wider ${meta.color}`}>{meta.label}</span>
+  );
+}
+
+function PortalLeadsTab({ affiliate, apps, myLeads, refetchLeads }: {
+  affiliate: Affiliate;
+  apps: App[];
+  myLeads: PortalLead[];
+  refetchLeads: () => void;
+}) {
+  const [showForm, setShowForm] = useState(false);
+  const [filterStatus, setFilterStatus] = useState("");
+  const [search, setSearch] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+
+  const [form, setForm] = useState({ fullName: "", phone: "", email: "", productId: "", notes: "" });
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!form.fullName.trim()) { setSubmitError("Name is required"); return; }
+    setSubmitting(true);
+    setSubmitError("");
+    try {
+      await apiPost("/leads", {
+        fullName: form.fullName.trim(),
+        phone: form.phone.trim() || undefined,
+        email: form.email.trim() || undefined,
+        productId: form.productId ? Number(form.productId) : undefined,
+        notes: form.notes.trim() || undefined,
+      });
+      setForm({ fullName: "", phone: "", email: "", productId: "", notes: "" });
+      setShowForm(false);
+      refetchLeads();
+    } catch (err: unknown) {
+      setSubmitError(err instanceof Error ? err.message : "Failed to submit lead");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const filtered = myLeads.filter(l => {
+    if (filterStatus && l.status !== filterStatus) return false;
+    if (search) {
+      const s = search.toLowerCase();
+      return l.fullName.toLowerCase().includes(s) || l.email?.toLowerCase().includes(s) || l.phone?.includes(s);
+    }
+    return true;
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-sm font-semibold">My Leads</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Submit prospects who expressed interest offline — solar, consulting, real estate, and more.</p>
+        </div>
+        <button
+          onClick={() => setShowForm(s => !s)}
+          className="flex items-center gap-1.5 text-xs bg-primary text-primary-foreground font-semibold px-3 py-1.5 rounded hover:bg-primary/90 transition-colors"
+        >
+          {showForm ? <X className="w-3 h-3" /> : <Send className="w-3 h-3" />}
+          {showForm ? "Cancel" : "Submit Lead"}
+        </button>
+      </div>
+
+      {showForm && (
+        <form onSubmit={handleSubmit} className="bg-card border border-border rounded p-4 space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">New Lead</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Full Name *</label>
+              <input
+                type="text"
+                value={form.fullName}
+                onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))}
+                placeholder="Jane Smith"
+                className="w-full text-xs bg-background border border-border rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Phone</label>
+              <input
+                type="tel"
+                value={form.phone}
+                onChange={e => setForm(f => ({ ...f, phone: e.target.value }))}
+                placeholder="+1 555 000 0000"
+                className="w-full text-xs bg-background border border-border rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Email</label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                placeholder="jane@email.com"
+                className="w-full text-xs bg-background border border-border rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Product</label>
+              <select
+                value={form.productId}
+                onChange={e => setForm(f => ({ ...f, productId: e.target.value }))}
+                className="w-full text-xs bg-background border border-border rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                <option value="">Select a product…</option>
+                {apps.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Notes</label>
+            <textarea
+              value={form.notes}
+              onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+              placeholder="How did you meet? What are they interested in?"
+              rows={2}
+              className="w-full text-xs bg-background border border-border rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+            />
+          </div>
+          {submitError && <p className="text-xs text-destructive">{submitError}</p>}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="text-xs bg-primary text-primary-foreground font-semibold px-4 py-2 rounded hover:bg-primary/90 transition-colors disabled:opacity-50"
+          >
+            {submitting ? "Submitting…" : "Submit Lead"}
+          </button>
+        </form>
+      )}
+
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search leads…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full pl-7 pr-3 py-1.5 text-xs bg-card border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+        <select
+          value={filterStatus}
+          onChange={e => setFilterStatus(e.target.value)}
+          className="text-xs bg-card border border-border rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary"
+        >
+          <option value="">All Statuses</option>
+          {Object.entries(LEAD_STATUS_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+        </select>
+      </div>
+
+      <div className="bg-card border border-border rounded overflow-hidden">
+        {!filtered.length ? (
+          <div className="py-12 text-center">
+            <Users className="w-7 h-7 mx-auto mb-3 text-muted-foreground opacity-30" />
+            <p className="text-sm text-muted-foreground">{myLeads.length === 0 ? "No leads yet — submit your first one above!" : "No leads match your filter"}</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {filtered.map(lead => (
+              <div key={lead.id} className="px-4 py-3 flex items-start justify-between gap-3">
+                <div className="space-y-0.5 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-xs font-semibold">{lead.fullName}</p>
+                    <LeadStatusBadge status={lead.status} />
+                  </div>
+                  {lead.product && (
+                    <p className="text-[10px] text-muted-foreground">{lead.product.name}</p>
+                  )}
+                  <div className="flex flex-wrap gap-2 mt-1">
+                    {lead.email && <p className="text-[10px] text-muted-foreground">{lead.email}</p>}
+                    {lead.phone && <p className="text-[10px] text-muted-foreground">{lead.phone}</p>}
+                  </div>
+                  {lead.notes && <p className="text-[10px] text-muted-foreground italic truncate max-w-xs">{lead.notes}</p>}
+                </div>
+                <p className="text-[10px] text-muted-foreground flex-shrink-0 text-right">{new Date(lead.createdAt).toLocaleDateString()}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // DASHBOARD
 // ─────────────────────────────────────────────────────────────
 function PortalDashboard({ affiliate, onLogout }: { affiliate: Affiliate; onLogout: () => void }) {
-  const [tab, setTab] = useState<"overview" | "apps" | "leaderboard">("overview");
+  const [tab, setTab] = useState<"overview" | "apps" | "leads" | "leaderboard">("overview");
   const [copied, setCopied] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(!affiliate.welcomedAt);
   const qc = useQueryClient();
@@ -389,6 +605,11 @@ function PortalDashboard({ affiliate, onLogout }: { affiliate: Affiliate; onLogo
     queryKey: ["portal-leaderboard", affiliate.refCode],
     queryFn: () => apiGet(`/stats/leaderboard?ref=${affiliate.refCode}`),
     enabled: config?.leaderboardEnabled === true && tab === "leaderboard",
+  });
+  const { data: myLeads, refetch: refetchLeads } = useQuery<PortalLead[]>({
+    queryKey: ["portal-leads", affiliate.id],
+    queryFn: () => apiGet(`/affiliates/${affiliate.id}/leads`),
+    enabled: tab === "leads",
   });
 
   const currency = config?.currency ?? "USD";
@@ -435,6 +656,7 @@ function PortalDashboard({ affiliate, onLogout }: { affiliate: Affiliate; onLogo
             {[
               { key: "overview", label: "Overview" },
               { key: "apps", label: `Products${apps?.length ? ` (${apps.length})` : ""}` },
+              { key: "leads", label: `Leads${myLeads?.length ? ` (${myLeads.length})` : ""}` },
               ...(config?.leaderboardEnabled ? [{ key: "leaderboard", label: "Leaderboard" }] : []),
             ].map(t => (
               <button key={t.key} onClick={() => setTab(t.key as typeof tab)}
@@ -556,6 +778,8 @@ function PortalDashboard({ affiliate, onLogout }: { affiliate: Affiliate; onLogo
                 </div>
               )}
             </div>
+          ) : tab === "leads" ? (
+            <PortalLeadsTab affiliate={affiliate} apps={apps ?? []} myLeads={myLeads ?? []} refetchLeads={refetchLeads} />
           ) : (
             <div className="space-y-5">
               <div>

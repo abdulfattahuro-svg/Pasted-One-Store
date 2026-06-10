@@ -1,11 +1,12 @@
 import { Link, useLocation } from "wouter";
-import { LayoutDashboard, Users, ArrowRightLeft, Wallet, Activity, Settings, TrendingUp, Package } from "lucide-react";
+import { LayoutDashboard, Users, ArrowRightLeft, Wallet, Activity, Settings, TrendingUp, Package, UserCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/affiliates", label: "Affiliates", icon: Users },
   { href: "/products", label: "Products", icon: Package },
+  { href: "/leads", label: "Leads", icon: UserCheck },
   { href: "/conversions", label: "Conversions", icon: ArrowRightLeft },
   { href: "/payouts", label: "Payouts", icon: Wallet },
   { href: "/events", label: "Events", icon: Activity },
