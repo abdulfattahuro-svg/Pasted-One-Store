@@ -1,8 +1,8 @@
-import { pgTable, serial, integer, varchar, text, timestamp, pgEnum } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, varchar, text, timestamp, pgEnum, json } from "drizzle-orm/pg-core";
 import { affiliatesTable } from "./affiliates";
 import { productsTable } from "./apps";
 
-export const leadStatusEnum = pgEnum("lead_status", ["new", "contacted", "interested", "won", "lost"]);
+export const leadStatusEnum = pgEnum("lead_status", ["new", "contacted", "interested", "approved", "won", "lost", "rejected"]);
 export const leadSourceEnum = pgEnum("lead_source", ["affiliate_submission", "website_form", "api", "import"]);
 
 export const leadsTable = pgTable("leads", {
@@ -11,6 +11,7 @@ export const leadsTable = pgTable("leads", {
   affiliateId: integer("affiliate_id").notNull().references(() => affiliatesTable.id),
   affiliateCode: varchar("affiliate_code", { length: 50 }).notNull(),
   productSlug: varchar("product_slug", { length: 100 }),
+  offerName: varchar("offer_name", { length: 255 }),
   fullName: varchar("full_name", { length: 255 }).notNull(),
   phone: varchar("phone", { length: 50 }),
   email: varchar("email", { length: 255 }),
@@ -18,7 +19,13 @@ export const leadsTable = pgTable("leads", {
   status: leadStatusEnum("status").notNull().default("new"),
   source: leadSourceEnum("source").notNull().default("affiliate_submission"),
   approvedAt: timestamp("approved_at"),
+  approvedBy: varchar("approved_by", { length: 255 }),
+  rejectedAt: timestamp("rejected_at"),
+  rejectedReason: text("rejected_reason"),
+  wonAt: timestamp("won_at"),
+  lostAt: timestamp("lost_at"),
   convertedAt: timestamp("converted_at"),
+  metadata: json("metadata"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

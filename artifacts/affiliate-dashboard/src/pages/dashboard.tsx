@@ -89,9 +89,11 @@ export default function Dashboard() {
       </div>
 
       {/* Leads stats */}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label="Total Leads" value={fmt((stats as Record<string, number> | undefined)?.totalLeads ?? 0)} sub="all time" icon={UserCheck} color="text-cyan-400" />
-        <StatCard label="Leads This Month" value={fmt((stats as Record<string, number> | undefined)?.leadsThisMonth ?? 0)} sub="current month" icon={UserCheck} color="text-teal-400" />
+        <StatCard label="Approved Leads" value={fmt((stats as Record<string, number> | undefined)?.approvedLeads ?? 0)} sub="approved + won" icon={UserCheck} color="text-sky-400" />
+        <StatCard label="Won Leads" value={fmt((stats as Record<string, number> | undefined)?.wonLeads ?? 0)} sub={`${(stats as Record<string, number> | undefined)?.leadConversionPct ?? 0}% win rate`} icon={TrendingUp} color="text-emerald-400" />
+        <StatCard label="Lead Revenue" value={fmtCurrency((stats as Record<string, number> | undefined)?.leadRevenue ?? 0)} sub="from lead commissions" icon={DollarSign} color="text-amber-400" />
       </div>
 
       {/* Earnings breakdown */}

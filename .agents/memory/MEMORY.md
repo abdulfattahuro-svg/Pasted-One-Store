@@ -2,3 +2,4 @@
 - [DB schema location](db-schema.md) — DB package at lib/db/src/schema/, not packages/. Tables: onboarding_responses, email_templates, affiliates (has onboardingSubmittedAt column)
 - [Config auto-seed](config-autoseed.md) — ensureConfig() in config.ts creates default row if table empty; systemConfig was empty causing 404
 - [Products schema strategy](products-schema.md) — apps table extended additively (never renamed); productsTable = appsTable alias; new columns added via raw SQL when drizzle push needs TTY
+- [Lead commission engine](lead-commission-engine.md) — triggers fire on status change (approved→lead_approved, won→deal_won) and on creation (lead_submitted); paymentId=`lead-${id}-${event}` prevents duplicates; conversions use source=lead_trigger for filtering

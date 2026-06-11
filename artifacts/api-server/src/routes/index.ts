@@ -13,6 +13,7 @@ import trackingRouter from "./tracking";
 import emailTemplatesRouter, { seedEmailTemplates } from "./email_templates";
 import leadsRouter from "./leads";
 import publicRouter from "./public";
+import commissionRulesRouter from "./commission_rules";
 
 const router: IRouter = Router();
 
@@ -30,6 +31,7 @@ router.use(trackingRouter);
 router.use(emailTemplatesRouter);
 router.use(leadsRouter);
 router.use(publicRouter);
+router.use(commissionRulesRouter);
 
 seedEmailTemplates().catch(() => {});
 

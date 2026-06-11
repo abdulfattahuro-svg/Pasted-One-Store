@@ -489,6 +489,215 @@ function ApiKeyManager({ productId }: { productId: number }) {
   );
 }
 
+type CommissionRule = {
+  id: number;
+  offerId: number;
+  triggerEvent: string;
+  commissionType: string;
+  commissionValue: number;
+  recurringEnabled: boolean;
+  recurringPercentage: number | null;
+  isActive: boolean;
+  createdAt: string;
+};
+
+const TRIGGER_EVENT_LABELS: Record<string, string> = {
+  lead_submitted: "Lead Submitted",
+  lead_approved: "Lead Approved",
+  deal_won: "Deal Won",
+  signup: "Signup",
+  purchase: "Purchase",
+  renewal: "Renewal",
+  upgrade: "Upgrade",
+};
+
+const TRIGGER_EVENTS = Object.keys(TRIGGER_EVENT_LABELS);
+
+const RULE_COMMISSION_TYPES = [
+  { value: "fixed", label: "Fixed" },
+  { value: "percentage", label: "Percentage %" },
+  { value: "hybrid", label: "Hybrid (Fixed + %)" },
+];
+
+function ruleValueLabel(rule: CommissionRule) {
+  if (rule.commissionType === "fixed") return `₦${rule.commissionValue.toLocaleString()}`;
+  if (rule.commissionType === "percentage") return `${rule.commissionValue}%`;
+  if (rule.commissionType === "hybrid") return `₦${rule.commissionValue.toLocaleString()} + ${rule.recurringPercentage ?? 0}%`;
+  return String(rule.commissionValue);
+}
+
+function CommissionRuleManager({ offerId }: { offerId: number }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [showCreate, setShowCreate] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [form, setForm] = useState({ triggerEvent: "lead_submitted", commissionType: "fixed", commissionValue: "", recurringPercentage: "" });
+
+  const { data: rules = [] } = useQuery<CommissionRule[]>({
+    queryKey: ["commission-rules", offerId],
+    queryFn: () => apiFetch(`/products/${offerId}/commission-rules`),
+  });
+
+  const createRule = useMutation({
+    mutationFn: () => apiFetch(`/products/${offerId}/commission-rules`, {
+      method: "POST",
+      body: JSON.stringify({
+        triggerEvent: form.triggerEvent,
+        commissionType: form.commissionType,
+        commissionValue: Number(form.commissionValue),
+        recurringEnabled: form.commissionType === "hybrid",
+        recurringPercentage: form.recurringPercentage ? Number(form.recurringPercentage) : undefined,
+      }),
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["commission-rules", offerId] });
+      setShowCreate(false);
+      setForm({ triggerEvent: "lead_submitted", commissionType: "fixed", commissionValue: "", recurringPercentage: "" });
+      toast({ title: "Commission rule added" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const updateRule = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: Record<string, unknown> }) =>
+      apiFetch(`/products/${offerId}/commission-rules/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["commission-rules", offerId] });
+      setEditingId(null);
+      toast({ title: "Rule updated" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteRule = useMutation({
+    mutationFn: (id: number) => apiFetch(`/products/${offerId}/commission-rules/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["commission-rules", offerId] });
+      toast({ title: "Rule deleted" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const usedEvents = new Set(rules.map(r => r.triggerEvent));
+  const availableEvents = TRIGGER_EVENTS.filter(e => !usedEvents.has(e));
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+          <Zap className="w-3 h-3" /> Commission Rules ({rules.length})
+        </p>
+        {availableEvents.length > 0 && (
+          <button onClick={() => { setShowCreate(s => !s); setForm(f => ({ ...f, triggerEvent: availableEvents[0] })); }}
+            className="flex items-center gap-1 text-[10px] px-2 py-1 rounded bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors">
+            <Plus className="w-3 h-3" /> Add Rule
+          </button>
+        )}
+      </div>
+
+      {showCreate && (
+        <div className="bg-background border border-border rounded-lg p-3 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] text-muted-foreground block mb-1">Trigger Event</label>
+              <select value={form.triggerEvent} onChange={e => setForm(f => ({ ...f, triggerEvent: e.target.value }))}
+                className="w-full bg-card border border-border rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50">
+                {availableEvents.map(e => <option key={e} value={e}>{TRIGGER_EVENT_LABELS[e]}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground block mb-1">Commission Type</label>
+              <select value={form.commissionType} onChange={e => setForm(f => ({ ...f, commissionType: e.target.value }))}
+                className="w-full bg-card border border-border rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50">
+                {RULE_COMMISSION_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground block mb-1">
+                {form.commissionType === "percentage" ? "Rate (%)" : "Amount (₦)"}
+              </label>
+              <input type="number" value={form.commissionValue} onChange={e => setForm(f => ({ ...f, commissionValue: e.target.value }))}
+                placeholder="e.g. 500"
+                className="w-full bg-card border border-border rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
+            </div>
+            {form.commissionType === "hybrid" && (
+              <div>
+                <label className="text-[10px] text-muted-foreground block mb-1">Bonus Rate (%)</label>
+                <input type="number" value={form.recurringPercentage} onChange={e => setForm(f => ({ ...f, recurringPercentage: e.target.value }))}
+                  placeholder="e.g. 5"
+                  className="w-full bg-card border border-border rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50" />
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setShowCreate(false)} className="text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:bg-accent transition-colors">Cancel</button>
+            <button onClick={() => createRule.mutate()} disabled={!form.commissionValue || createRule.isPending}
+              className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
+              {createRule.isPending ? "Saving..." : "Add Rule"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {rules.length > 0 && (
+        <div className="space-y-1">
+          {rules.map(rule => (
+            <div key={rule.id} className="flex items-center gap-2 bg-background border border-border rounded px-3 py-2">
+              <Zap className={`w-3 h-3 flex-shrink-0 ${rule.isActive ? "text-primary" : "text-muted-foreground"}`} />
+              <div className="flex-1 min-w-0">
+                {editingId === rule.id ? (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input
+                      type="number"
+                      defaultValue={rule.commissionValue}
+                      id={`rule-val-${rule.id}`}
+                      className="w-24 bg-card border border-border rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+                    />
+                    <button
+                      onClick={() => {
+                        const input = document.getElementById(`rule-val-${rule.id}`) as HTMLInputElement;
+                        updateRule.mutate({ id: rule.id, data: { commissionValue: Number(input.value) } });
+                      }}
+                      className="text-[10px] px-2 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+                      Save
+                    </button>
+                    <button onClick={() => setEditingId(null)} className="text-[10px] px-2 py-1 rounded border border-border text-muted-foreground hover:bg-accent transition-colors">Cancel</button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-medium">{TRIGGER_EVENT_LABELS[rule.triggerEvent] ?? rule.triggerEvent}</span>
+                    <span className="text-[10px] font-mono bg-primary/10 text-primary px-1.5 py-0.5 rounded border border-primary/20">{ruleValueLabel(rule)}</span>
+                    {!rule.isActive && <span className="text-[9px] bg-destructive/10 text-destructive border border-destructive/20 px-1.5 py-0.5 rounded">inactive</span>}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-0.5 flex-shrink-0">
+                <button onClick={() => updateRule.mutate({ id: rule.id, data: { isActive: !rule.isActive } })}
+                  title={rule.isActive ? "Disable rule" : "Enable rule"}
+                  className={`p-1.5 rounded hover:bg-accent transition-colors ${rule.isActive ? "text-primary" : "text-muted-foreground"}`}>
+                  {rule.isActive ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+                </button>
+                <button onClick={() => setEditingId(editingId === rule.id ? null : rule.id)}
+                  className="p-1.5 rounded hover:bg-accent transition-colors text-muted-foreground hover:text-foreground">
+                  <Pencil className="w-3 h-3" />
+                </button>
+                <button onClick={() => deleteRule.mutate(rule.id)}
+                  className="p-1.5 rounded hover:bg-accent transition-colors text-muted-foreground hover:text-destructive">
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {rules.length === 0 && !showCreate && (
+        <p className="text-[10px] text-muted-foreground py-1">No commission rules yet. Add rules to automatically trigger commissions on lead events.</p>
+      )}
+    </div>
+  );
+}
+
 function commissionSummary(product: Product) {
   if (!product.commissionType) return "Global default";
   const type = COMMISSION_TYPES.find(c => c.value === product.commissionType)?.label ?? product.commissionType;
@@ -695,6 +904,7 @@ export default function Products() {
                         )}
                         <AssetManager productId={product.id} />
                         <ApiKeyManager productId={product.id} />
+                        <CommissionRuleManager offerId={product.id} />
                       </div>
                     )}
                   </>

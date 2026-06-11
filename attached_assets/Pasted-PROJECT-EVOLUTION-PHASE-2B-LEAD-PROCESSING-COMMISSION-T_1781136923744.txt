@@ -1,0 +1,333 @@
+PROJECT EVOLUTION PHASE 2B: LEAD PROCESSING + COMMISSION TRIGGERS + CRM PIPELINE
+
+Analyze the existing codebase before making changes.
+
+Phase 2A introduced:
+
+* Leads table
+* Affiliate lead submission
+* Admin lead management
+* Dashboard lead stats
+* API foundation
+
+Phase 2B transforms leads into a full processing system.
+
+IMPORTANT
+
+Do not remove existing functionality.
+
+Maintain compatibility with:
+
+* Offers
+* Affiliates
+* Referral tracking
+* Conversions
+* Commissions
+* Payouts
+* Existing APIs
+
+==================================================
+PART 1 — FULL PUBLIC LEAD PROCESSING
+====================================
+
+Current:
+
+POST /api/public/leads
+
+only validates API key and resolves offer.
+
+Now fully implement lead creation.
+
+Request body should support:
+
+* apiKey
+* affiliateCode (optional)
+* offerSlug (optional)
+* fullName
+* phone
+* email
+* notes
+* source
+* metadata (optional object)
+
+Logic:
+
+1. Validate API key
+2. Resolve Offer
+3. Resolve Affiliate from affiliateCode
+4. Create Lead
+5. Attribute permanently to:
+
+* offerId
+* offerSlug
+* offerName
+* affiliateId
+* affiliateCode
+
+6. Save metadata JSON for future extensibility
+
+7. Return success response
+
+Example:
+
+{
+"success": true,
+"leadId": 123,
+"offerName": "Solar Installation Package"
+}
+
+==================================================
+PART 2 — LEAD APPROVAL FLOW
+===========================
+
+Add approval workflow.
+
+New lead states:
+
+* new
+* contacted
+* interested
+* approved
+* won
+* lost
+* rejected
+
+Admin actions:
+
+Approve Lead
+Reject Lead
+Mark Won
+Mark Lost
+
+Store:
+
+* approvedAt
+* approvedBy
+* rejectedAt
+* rejectedReason
+* wonAt
+* lostAt
+
+==================================================
+PART 3 — COMMISSION TRIGGER ENGINE
+==================================
+
+Build commission triggers per offer.
+
+Each offer can define:
+
+Event Type
+Commission Type
+Commission Value
+
+Supported Events:
+
+* lead_submitted
+* lead_approved
+* deal_won
+* signup
+* purchase
+* renewal
+* upgrade
+
+Examples:
+
+Solar:
+
+Lead Submitted = ₦500
+
+Lead Approved = ₦2,000
+
+Deal Won = ₦50,000
+
+Software:
+
+Signup = ₦500
+
+Purchase = 20%
+
+Renewal = 10%
+
+==================================================
+DATABASE
+========
+
+Create table:
+
+offer_commission_rules
+
+Fields:
+
+* id
+* offerId
+* triggerEvent
+* commissionType
+* commissionValue
+* recurringEnabled
+* recurringPercentage
+* createdAt
+
+commissionType:
+
+* fixed
+* percentage
+* hybrid
+
+==================================================
+COMMISSION GENERATION
+=====================
+
+When trigger fires:
+
+System should:
+
+1. Find matching offer rule
+2. Generate conversion record
+3. Attribute affiliate
+4. Create commission
+5. Respect hold period
+6. Add audit log
+
+No duplicate commissions for same trigger.
+
+==================================================
+PART 4 — KANBAN CRM PIPELINE
+============================
+
+Implement Kanban board for Leads admin page.
+
+Columns:
+
+* New
+* Contacted
+* Interested
+* Approved
+* Won
+* Lost
+* Rejected
+
+Requirements:
+
+* Drag and drop lead cards
+* Update status automatically
+* Save instantly
+* Search leads
+* Filter by offer
+* Filter by affiliate
+
+Lead Card:
+
+* Name
+* Phone
+* Affiliate
+* Offer
+* Date
+* Notes preview
+
+==================================================
+PART 5 — LEAD HISTORY / AUDIT TRAIL
+===================================
+
+Create lead_history table.
+
+Fields:
+
+* id
+* leadId
+* changedBy
+* previousStatus
+* newStatus
+* notes
+* createdAt
+
+Every lead status change must log history.
+
+Example:
+
+New → Contacted
+Contacted → Interested
+Interested → Approved
+Approved → Won
+
+==================================================
+PART 6 — OFFER SETTINGS
+=======================
+
+Inside Offer Management:
+
+Add Commission Rules section.
+
+Admin can:
+
+* Add Rule
+* Edit Rule
+* Delete Rule
+
+Examples:
+
+Lead Submitted → ₦500
+
+Lead Approved → ₦2,000
+
+Deal Won → ₦50,000
+
+==================================================
+PART 7 — AFFILIATE PORTAL
+=========================
+
+Affiliate can see:
+
+My Leads
+
+Status
+
+Approved Leads
+
+Won Leads
+
+Lead Earnings
+
+Pending Lead Earnings
+
+Lead Conversion Rate
+
+==================================================
+PART 8 — DASHBOARD
+==================
+
+Add:
+
+* Approved Leads
+* Won Leads
+* Lead Conversion %
+* Lead Revenue
+* Top Performing Offers
+* Lead Funnel Metrics
+
+==================================================
+IMPORTANT
+=========
+
+Do NOT implement yet:
+
+* Webhooks
+* External CRM sync
+* Multi-business support
+* SaaS multi-tenant
+
+Prepare architecture for them.
+
+==================================================
+DELIVERABLES
+============
+
+After implementation provide:
+
+1. Database changes
+2. New API behavior
+3. Commission trigger architecture
+4. Kanban implementation
+5. Audit system
+6. Files modified
+7. Technical debt
+8. Recommended Phase 3

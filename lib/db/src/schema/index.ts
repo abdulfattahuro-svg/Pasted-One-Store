@@ -10,3 +10,5 @@ export * from "./onboarding";
 export * from "./email_templates";
 export * from "./leads";
 export * from "./offer_api_keys";
+export * from "./offer_commission_rules";
+export * from "./lead_history";

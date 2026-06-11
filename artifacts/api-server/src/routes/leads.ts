@@ -1,28 +1,119 @@
 import { Router } from "express";
 import { eq, ilike, or, and, desc } from "drizzle-orm";
-import { db, affiliatesTable, productsTable } from "@workspace/db";
+import { db, affiliatesTable, productsTable, conversionsTable, systemConfigTable } from "@workspace/db";
 import { leadsTable } from "@workspace/db";
+import { offerCommissionRulesTable } from "@workspace/db";
+import { leadHistoryTable } from "@workspace/db";
 
 const router = Router();
 
-const VALID_STATUSES = ["new", "contacted", "interested", "won", "lost"] as const;
+const VALID_STATUSES = ["new", "contacted", "interested", "approved", "won", "lost", "rejected"] as const;
 type LeadStatus = (typeof VALID_STATUSES)[number];
 
 function serializeLead(lead: typeof leadsTable.$inferSelect) {
   return {
     ...lead,
+    metadata: lead.metadata ?? null,
     createdAt: lead.createdAt.toISOString(),
     updatedAt: lead.updatedAt.toISOString(),
     approvedAt: lead.approvedAt?.toISOString() ?? null,
+    rejectedAt: lead.rejectedAt?.toISOString() ?? null,
+    wonAt: lead.wonAt?.toISOString() ?? null,
+    lostAt: lead.lostAt?.toISOString() ?? null,
     convertedAt: lead.convertedAt?.toISOString() ?? null,
   };
 }
+
+// ─── Commission trigger engine ────────────────────────────────
+async function triggerLeadCommission(lead: typeof leadsTable.$inferSelect, triggerEvent: string) {
+  if (!lead.productId && !lead.productSlug) return;
+
+  const offerId = lead.productId;
+  if (!offerId) return;
+
+  const rules = await db
+    .select()
+    .from(offerCommissionRulesTable)
+    .where(
+      and(
+        eq(offerCommissionRulesTable.offerId, offerId),
+        eq(offerCommissionRulesTable.triggerEvent, triggerEvent),
+        eq(offerCommissionRulesTable.isActive, true)
+      )
+    );
+
+  if (!rules.length) return;
+
+  const rule = rules[0];
+  const paymentId = `lead-${lead.id}-${triggerEvent}`;
+
+  const existing = await db
+    .select({ id: conversionsTable.id })
+    .from(conversionsTable)
+    .where(eq(conversionsTable.paymentId, paymentId));
+
+  if (existing.length > 0) return;
+
+  const [config] = await db.select().from(systemConfigTable);
+  const holdDays = config?.holdDays ?? 14;
+
+  const ruleValue = Number(rule.commissionValue);
+  let commission: number;
+
+  if (rule.commissionType === "fixed") {
+    commission = ruleValue;
+  } else if (rule.commissionType === "percentage") {
+    commission = ruleValue;
+  } else if (rule.commissionType === "hybrid") {
+    const pct = rule.recurringPercentage ? Number(rule.recurringPercentage) : 0;
+    commission = ruleValue + pct;
+  } else {
+    commission = ruleValue;
+  }
+
+  const holdEndDate = new Date();
+  holdEndDate.setDate(holdEndDate.getDate() + holdDays);
+
+  await db.insert(conversionsTable).values({
+    affiliateId: lead.affiliateId,
+    userId: `lead-${lead.id}`,
+    appName: lead.productSlug ?? String(offerId),
+    paymentId,
+    amount: String(ruleValue),
+    commission: String(commission),
+    status: "HOLD",
+    holdEndDate,
+    productId: lead.productId ?? undefined,
+    productSlug: lead.productSlug ?? undefined,
+    conversionType: triggerEvent,
+    source: "lead_trigger",
+  });
+}
+
+// ─── Log history ─────────────────────────────────────────────
+async function logLeadHistory(
+  leadId: number,
+  previousStatus: string | null,
+  newStatus: string,
+  changedBy?: string,
+  notes?: string
+) {
+  await db.insert(leadHistoryTable).values({
+    leadId,
+    changedBy: changedBy ?? null,
+    previousStatus: previousStatus ?? null,
+    newStatus,
+    notes: notes ?? null,
+  });
+}
+
+// ─── Routes ──────────────────────────────────────────────────
 
 router.get("/leads", async (req, res) => {
   const { status, affiliateId, productSlug, search } = req.query as Record<string, string>;
 
   const conditions = [];
-  if (status) conditions.push(eq(leadsTable.status, status as "new" | "contacted" | "interested" | "won" | "lost"));
+  if (status) conditions.push(eq(leadsTable.status, status as LeadStatus));
   if (affiliateId) conditions.push(eq(leadsTable.affiliateId, Number(affiliateId)));
   if (productSlug) conditions.push(eq(leadsTable.productSlug, productSlug));
   if (search) {
@@ -92,10 +183,15 @@ router.post("/leads", async (req, res) => {
 
   const parsedProductId = productId ? Number(productId) : null;
   let resolvedProductSlug = typeof bodyProductSlug === "string" ? bodyProductSlug : null;
-  if (parsedProductId && !resolvedProductSlug) {
-    const [prod] = await db.select({ slug: productsTable.slug })
+  let resolvedOfferName: string | null = null;
+
+  if (parsedProductId) {
+    const [prod] = await db.select({ slug: productsTable.slug, name: productsTable.name })
       .from(productsTable).where(eq(productsTable.id, parsedProductId));
-    resolvedProductSlug = prod?.slug ?? null;
+    if (prod) {
+      resolvedProductSlug = resolvedProductSlug ?? prod.slug;
+      resolvedOfferName = prod.name;
+    }
   }
 
   const [row] = await db.insert(leadsTable).values({
@@ -103,12 +199,16 @@ router.post("/leads", async (req, res) => {
     affiliateCode,
     productId: parsedProductId,
     productSlug: resolvedProductSlug,
+    offerName: resolvedOfferName,
     fullName: String(fullName).trim(),
     phone: phone && typeof phone === "string" ? phone.trim() || null : null,
     email: email && typeof email === "string" ? email.trim() || null : null,
     notes: notes && typeof notes === "string" ? notes.trim() || null : null,
     source,
   }).returning();
+
+  await logLeadHistory(row.id, null, "new", undefined, "Lead created");
+  await triggerLeadCommission(row, "lead_submitted").catch(() => {});
 
   return res.status(201).json(serializeLead(row));
 });
@@ -123,31 +223,81 @@ router.get("/leads/:id", async (req, res) => {
   return res.json(serializeLead(row));
 });
 
+router.get("/leads/:id/history", async (req, res) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+  const history = await db
+    .select()
+    .from(leadHistoryTable)
+    .where(eq(leadHistoryTable.leadId, id))
+    .orderBy(desc(leadHistoryTable.createdAt));
+
+  return res.json(history.map(h => ({
+    ...h,
+    createdAt: h.createdAt.toISOString(),
+  })));
+});
+
 router.patch("/leads/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
-  const { status, notes, approvedAt, convertedAt } = req.body as Record<string, unknown>;
+  const { status, notes, rejectedReason } = req.body as Record<string, unknown>;
+  const adminLabel = (req.session as Record<string, unknown>)?.adminEmail
+    ? String((req.session as Record<string, unknown>).adminEmail)
+    : "admin";
+
+  const [existing] = await db.select().from(leadsTable).where(eq(leadsTable.id, id));
+  if (!existing) return res.status(404).json({ error: "Lead not found" });
 
   const updates: Partial<typeof leadsTable.$inferInsert> = {
     updatedAt: new Date(),
   };
+
+  if (notes !== undefined) updates.notes = notes === null ? null : String(notes);
+
   if (status) {
     if (!VALID_STATUSES.includes(status as LeadStatus)) {
       return res.status(400).json({ error: `Invalid status. Must be one of: ${VALID_STATUSES.join(", ")}` });
     }
-    updates.status = status as LeadStatus;
+    const newStatus = status as LeadStatus;
+    updates.status = newStatus;
+
+    if (newStatus === "approved") {
+      updates.approvedAt = new Date();
+      updates.approvedBy = adminLabel;
+    } else if (newStatus === "rejected") {
+      updates.rejectedAt = new Date();
+      updates.rejectedReason = rejectedReason ? String(rejectedReason) : null;
+    } else if (newStatus === "won") {
+      updates.wonAt = new Date();
+    } else if (newStatus === "lost") {
+      updates.lostAt = new Date();
+    }
   }
-  if (notes !== undefined) updates.notes = notes === null ? null : String(notes);
-  if (approvedAt && typeof approvedAt === "string") updates.approvedAt = new Date(approvedAt);
-  if (convertedAt && typeof convertedAt === "string") updates.convertedAt = new Date(convertedAt);
 
   const [row] = await db.update(leadsTable)
     .set(updates)
     .where(eq(leadsTable.id, id))
     .returning();
 
-  if (!row) return res.status(404).json({ error: "Lead not found" });
+  if (status && status !== existing.status) {
+    await logLeadHistory(
+      id,
+      existing.status,
+      String(status),
+      adminLabel,
+      rejectedReason ? String(rejectedReason) : undefined
+    );
+
+    if (status === "approved") {
+      await triggerLeadCommission(row, "lead_approved").catch(() => {});
+    } else if (status === "won") {
+      await triggerLeadCommission(row, "deal_won").catch(() => {});
+    }
+  }
+
   return res.json(serializeLead(row));
 });
 
@@ -161,7 +311,7 @@ router.get("/affiliates/:id/leads", async (req, res) => {
 
   const { status, search } = req.query as Record<string, string>;
   const conditions = [eq(leadsTable.affiliateId, id)];
-  if (status) conditions.push(eq(leadsTable.status, status as "new" | "contacted" | "interested" | "won" | "lost"));
+  if (status) conditions.push(eq(leadsTable.status, status as LeadStatus));
   if (search) {
     conditions.push(
       or(

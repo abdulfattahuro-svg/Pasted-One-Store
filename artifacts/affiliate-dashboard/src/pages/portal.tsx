@@ -65,7 +65,7 @@ type PortalLead = {
   phone: string | null;
   email: string | null;
   notes: string | null;
-  status: "new" | "contacted" | "interested" | "won" | "lost";
+  status: "new" | "contacted" | "interested" | "approved" | "won" | "lost" | "rejected";
   source: string;
   createdAt: string;
   product: { id: number; name: string; slug: string } | null;
@@ -386,8 +386,10 @@ const LEAD_STATUS_META: Record<string, { label: string; color: string }> = {
   new: { label: "New", color: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
   contacted: { label: "Contacted", color: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
   interested: { label: "Interested", color: "bg-violet-500/10 text-violet-400 border-violet-500/20" },
+  approved: { label: "Approved", color: "bg-sky-500/10 text-sky-400 border-sky-500/20" },
   won: { label: "Won", color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
   lost: { label: "Lost", color: "bg-red-500/10 text-red-400 border-red-500/20" },
+  rejected: { label: "Rejected", color: "bg-rose-900/20 text-rose-400 border-rose-500/20" },
 };
 
 function LeadStatusBadge({ status }: { status: string }) {
@@ -443,6 +445,11 @@ function PortalLeadsTab({ affiliate, apps, myLeads, refetchLeads }: {
     return true;
   });
 
+  const totalLeads = myLeads.length;
+  const approvedLeads = myLeads.filter(l => l.status === "approved" || l.status === "won").length;
+  const wonLeads = myLeads.filter(l => l.status === "won").length;
+  const leadConversionRate = totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -457,6 +464,20 @@ function PortalLeadsTab({ affiliate, apps, myLeads, refetchLeads }: {
           {showForm ? <X className="w-3 h-3" /> : <Send className="w-3 h-3" />}
           {showForm ? "Cancel" : "Submit Lead"}
         </button>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: "Submitted", value: totalLeads, color: "text-foreground" },
+          { label: "Approved", value: approvedLeads, color: "text-sky-400" },
+          { label: "Won", value: wonLeads, color: "text-emerald-400" },
+          { label: "Win Rate", value: `${leadConversionRate}%`, color: "text-primary" },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="bg-card border border-border rounded p-3">
+            <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
+            <p className={`text-xl font-bold mt-1 tabular-nums ${color}`}>{value}</p>
+          </div>
+        ))}
       </div>
 
       {showForm && (

@@ -23,6 +23,14 @@ router.get("/stats/dashboard", async (req, res) => {
   const paidAmount = conversions.filter(c => c.status === "PAID").reduce((s, c) => s + Number(c.commission), 0);
   const totalRevenue = conversions.reduce((s, c) => s + Number(c.amount), 0);
 
+  const approvedLeads = leads.filter(l => l.status === "approved" || l.status === "won").length;
+  const wonLeads = leads.filter(l => l.status === "won").length;
+  const totalLeadsCount = leads.length;
+  const leadConversionPct = totalLeadsCount > 0 ? Math.round((wonLeads / totalLeadsCount) * 100) : 0;
+  const leadRevenue = conversions
+    .filter(c => c.source === "lead_trigger")
+    .reduce((s, c) => s + Number(c.commission), 0);
+
   return res.json({
     totalAffiliates: affiliates.length,
     activeAffiliates: affiliates.filter(a => a.status === "active").length,
@@ -34,8 +42,12 @@ router.get("/stats/dashboard", async (req, res) => {
     paidAmount,
     totalRevenue,
     pendingPayouts: payouts.filter(p => p.status === "PENDING").length,
-    totalLeads: leads.length,
+    totalLeads: totalLeadsCount,
     leadsThisMonth: leadsThisMonth.length,
+    approvedLeads,
+    wonLeads,
+    leadConversionPct,
+    leadRevenue,
   });
 });
 
