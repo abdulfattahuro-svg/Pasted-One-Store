@@ -67,8 +67,24 @@ type PortalLead = {
   notes: string | null;
   status: "new" | "contacted" | "interested" | "approved" | "won" | "lost" | "rejected";
   source: string;
+  expectedValue: string | null;
+  closedDealValue: string | null;
+  currency: string;
   createdAt: string;
   product: { id: number; name: string; slug: string } | null;
+};
+
+type LeadStats = {
+  totalLeads: number;
+  wonLeads: number;
+  approvedLeads: number;
+  winRate: number;
+  totalExpectedValue: number;
+  totalWonValue: number;
+  holdEarnings: number;
+  payableEarnings: number;
+  paidEarnings: number;
+  totalEarnings: number;
 };
 
 type LeaderboardEntry = {
@@ -399,6 +415,17 @@ function LeadStatusBadge({ status }: { status: string }) {
   );
 }
 
+function fmtDealValue(value: string | null | undefined, currency = "NGN"): string | null {
+  if (!value) return null;
+  const n = Number(value);
+  if (isNaN(n) || n === 0) return null;
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency, minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+  } catch {
+    return `${currency} ${n.toLocaleString()}`;
+  }
+}
+
 function PortalLeadsTab({ affiliate, apps, myLeads, refetchLeads }: {
   affiliate: Affiliate;
   apps: App[];
@@ -410,6 +437,11 @@ function PortalLeadsTab({ affiliate, apps, myLeads, refetchLeads }: {
   const [search, setSearch] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+
+  const { data: leadStats } = useQuery<LeadStats>({
+    queryKey: ["portal-lead-stats", affiliate.id],
+    queryFn: () => apiGet(`/affiliates/${affiliate.id}/lead-stats`),
+  });
 
   const [form, setForm] = useState({ fullName: "", phone: "", email: "", productId: "", notes: "" });
 
@@ -479,6 +511,43 @@ function PortalLeadsTab({ affiliate, apps, myLeads, refetchLeads }: {
           </div>
         ))}
       </div>
+
+      {leadStats && (leadStats.totalExpectedValue > 0 || leadStats.totalWonValue > 0 || leadStats.totalEarnings > 0) && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            {
+              label: "Pipeline Value",
+              value: fmtDealValue(String(leadStats.totalExpectedValue)) ?? "—",
+              sub: "expected",
+              color: "text-violet-400",
+            },
+            {
+              label: "Won Value",
+              value: fmtDealValue(String(leadStats.totalWonValue)) ?? "—",
+              sub: "closed deals",
+              color: "text-emerald-400",
+            },
+            {
+              label: "Pending Earnings",
+              value: fmtDealValue(String(leadStats.holdEarnings + leadStats.payableEarnings)) ?? "—",
+              sub: "from leads",
+              color: "text-amber-400",
+            },
+            {
+              label: "Paid Earnings",
+              value: fmtDealValue(String(leadStats.paidEarnings)) ?? "—",
+              sub: "from leads",
+              color: "text-primary",
+            },
+          ].map(({ label, value, sub, color }) => (
+            <div key={label} className="bg-card border border-border rounded p-3">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
+              <p className={`text-lg font-bold mt-1 tabular-nums ${color}`}>{value}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">{sub}</p>
+            </div>
+          ))}
+        </div>
+      )}
 
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-card border border-border rounded p-4 space-y-3">

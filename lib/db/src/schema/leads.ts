@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, varchar, text, timestamp, pgEnum, json } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, varchar, text, timestamp, pgEnum, json, numeric } from "drizzle-orm/pg-core";
 import { affiliatesTable } from "./affiliates";
 import { productsTable } from "./apps";
 
@@ -18,6 +18,13 @@ export const leadsTable = pgTable("leads", {
   notes: text("notes"),
   status: leadStatusEnum("status").notNull().default("new"),
   source: leadSourceEnum("source").notNull().default("affiliate_submission"),
+  // Deal value tracking
+  expectedValue: numeric("expected_value", { precision: 15, scale: 2 }),
+  closedDealValue: numeric("closed_deal_value", { precision: 15, scale: 2 }),
+  actualRevenue: numeric("actual_revenue", { precision: 15, scale: 2 }),
+  payoutAmount: numeric("payout_amount", { precision: 15, scale: 2 }),
+  currency: varchar("currency", { length: 10 }).notNull().default("NGN"),
+  // Status timestamps
   approvedAt: timestamp("approved_at"),
   approvedBy: varchar("approved_by", { length: 255 }),
   rejectedAt: timestamp("rejected_at"),

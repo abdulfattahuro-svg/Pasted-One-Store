@@ -31,6 +31,15 @@ router.get("/stats/dashboard", async (req, res) => {
     .filter(c => c.source === "lead_trigger")
     .reduce((s, c) => s + Number(c.commission), 0);
 
+  // Deal value aggregates
+  const totalExpectedValue = leads.reduce((s, l) => s + (l.expectedValue ? Number(l.expectedValue) : 0), 0);
+  const totalClosedDealValue = leads
+    .filter(l => l.status === "won")
+    .reduce((s, l) => s + (l.closedDealValue ? Number(l.closedDealValue) : 0), 0);
+  const totalActualRevenue = leads.reduce((s, l) => s + (l.actualRevenue ? Number(l.actualRevenue) : 0), 0);
+  const leadsWithValue = leads.filter(l => l.expectedValue && Number(l.expectedValue) > 0);
+  const avgDealSize = leadsWithValue.length > 0 ? Math.round(totalExpectedValue / leadsWithValue.length) : 0;
+
   return res.json({
     totalAffiliates: affiliates.length,
     activeAffiliates: affiliates.filter(a => a.status === "active").length,
@@ -48,6 +57,10 @@ router.get("/stats/dashboard", async (req, res) => {
     wonLeads,
     leadConversionPct,
     leadRevenue,
+    totalExpectedValue,
+    totalClosedDealValue,
+    totalActualRevenue,
+    avgDealSize,
   });
 });
 
@@ -136,9 +149,94 @@ router.get("/stats/earnings-timeline", async (req, res) => {
   return res.json(Object.entries(days).map(([date, v]) => ({ date, ...v })));
 });
 
-// ─── AFFILIATE LEADERBOARD ────────────────────────────────────
-// Returns anonymized rankings. Pass `ref=REFCODE` to highlight the current affiliate.
-// Respects excludeFromLeaderboard on products and the global leaderboard_enabled toggle.
+// ─── LEAD ECONOMICS ───────────────────────────────────────────────────────
+router.get("/stats/lead-economics", async (_req, res) => {
+  const [leads, leadConversions, affiliates, products] = await Promise.all([
+    db.select().from(leadsTable),
+    db.select().from(conversionsTable).where(eq(conversionsTable.source, "lead_trigger")),
+    db.select({ id: affiliatesTable.id, name: affiliatesTable.name, refCode: affiliatesTable.refCode }).from(affiliatesTable),
+    db.select({ id: productsTable.id, name: productsTable.name, slug: productsTable.slug }).from(productsTable),
+  ]);
+
+  const wonLeads = leads.filter(l => l.status === "won");
+
+  const totalExpectedValue = leads.reduce((s, l) => s + (l.expectedValue ? Number(l.expectedValue) : 0), 0);
+  const totalClosedDealValue = wonLeads.reduce((s, l) => s + (l.closedDealValue ? Number(l.closedDealValue) : 0), 0);
+  const totalActualRevenue = leads.reduce((s, l) => s + (l.actualRevenue ? Number(l.actualRevenue) : 0), 0);
+  const leadsWithValue = leads.filter(l => l.expectedValue && Number(l.expectedValue) > 0);
+  const avgDealSize = leadsWithValue.length > 0 ? Math.round(totalExpectedValue / leadsWithValue.length) : 0;
+  const totalLeadCommissions = leadConversions.reduce((s, c) => s + Number(c.commission), 0);
+
+  // Top affiliates by closed deal value + commission
+  const affiliateMap = new Map(affiliates.map(a => [a.id, a]));
+  const affRevenue: Record<number, { name: string; refCode: string; closedValue: number; commission: number; leads: number }> = {};
+
+  for (const lead of leads) {
+    if (!affRevenue[lead.affiliateId]) {
+      const aff = affiliateMap.get(lead.affiliateId);
+      affRevenue[lead.affiliateId] = { name: aff?.name ?? "—", refCode: aff?.refCode ?? "—", closedValue: 0, commission: 0, leads: 0 };
+    }
+    affRevenue[lead.affiliateId].leads += 1;
+    if (lead.status === "won" && lead.closedDealValue) {
+      affRevenue[lead.affiliateId].closedValue += Number(lead.closedDealValue);
+    }
+  }
+  for (const conv of leadConversions) {
+    if (!affRevenue[conv.affiliateId]) {
+      const aff = affiliateMap.get(conv.affiliateId);
+      affRevenue[conv.affiliateId] = { name: aff?.name ?? "—", refCode: aff?.refCode ?? "—", closedValue: 0, commission: 0, leads: 0 };
+    }
+    affRevenue[conv.affiliateId].commission += Number(conv.commission);
+  }
+  const topAffiliatesByRevenue = Object.entries(affRevenue)
+    .map(([id, v]) => ({ affiliateId: Number(id), ...v }))
+    .filter(a => a.leads > 0 || a.commission > 0)
+    .sort((a, b) => b.closedValue - a.closedValue || b.commission - a.commission)
+    .slice(0, 8);
+
+  // Top offers by closed deal value
+  const productMap = new Map(products.map(p => [p.id, p]));
+  const offerRevenue: Record<number, { name: string; slug: string; closedValue: number; commission: number; leads: number; wonLeads: number }> = {};
+
+  for (const lead of leads) {
+    if (!lead.productId) continue;
+    if (!offerRevenue[lead.productId]) {
+      const prod = productMap.get(lead.productId);
+      offerRevenue[lead.productId] = { name: prod?.name ?? "—", slug: prod?.slug ?? "—", closedValue: 0, commission: 0, leads: 0, wonLeads: 0 };
+    }
+    offerRevenue[lead.productId].leads += 1;
+    if (lead.status === "won") {
+      offerRevenue[lead.productId].wonLeads += 1;
+      if (lead.closedDealValue) {
+        offerRevenue[lead.productId].closedValue += Number(lead.closedDealValue);
+      }
+    }
+  }
+  for (const conv of leadConversions) {
+    if (!conv.productId) continue;
+    if (offerRevenue[conv.productId]) {
+      offerRevenue[conv.productId].commission += Number(conv.commission);
+    }
+  }
+  const topOffersByRevenue = Object.entries(offerRevenue)
+    .map(([id, v]) => ({ offerId: Number(id), ...v }))
+    .filter(o => o.leads > 0)
+    .sort((a, b) => b.closedValue - a.closedValue || b.commission - a.commission)
+    .slice(0, 8);
+
+  return res.json({
+    totalExpectedValue,
+    totalClosedDealValue,
+    totalActualRevenue,
+    avgDealSize,
+    totalLeadCommissions,
+    expectedVsClosed: { expected: totalExpectedValue, closed: totalClosedDealValue },
+    topAffiliatesByRevenue,
+    topOffersByRevenue,
+  });
+});
+
+// ─── AFFILIATE LEADERBOARD ────────────────────────────────────────────────
 router.get("/stats/leaderboard", async (req, res) => {
   const refCode = (req.query.ref as string | undefined)?.toUpperCase();
 
@@ -149,18 +247,12 @@ router.get("/stats/leaderboard", async (req, res) => {
 
   const products = await db.select().from(productsTable);
   const excludedSlugs = new Set(products.filter(p => p.excludeFromLeaderboard).map(p => p.slug));
-  const excludedIds = new Set(
-    products.filter(p => p.excludeFromLeaderboard).map(p => p.id)
-  );
+  const excludedIds = new Set(products.filter(p => p.excludeFromLeaderboard).map(p => p.id));
 
-  const affiliates = await db.select()
-    .from(affiliatesTable)
-    .where(eq(affiliatesTable.status, "active"));
-
+  const affiliates = await db.select().from(affiliatesTable).where(eq(affiliatesTable.status, "active"));
   const allEvents = await db.select().from(referralEventsTable);
   const allConversions = await db.select().from(conversionsTable);
 
-  // Filter out events/conversions from excluded products
   function isExcluded(productId: number | null, productSlug: string | null, appName: string) {
     if (productId && excludedIds.has(productId)) return true;
     if (productSlug && excludedSlugs.has(productSlug)) return true;
@@ -168,14 +260,9 @@ router.get("/stats/leaderboard", async (req, res) => {
     return false;
   }
 
-  const filteredEvents = allEvents.filter(e =>
-    !isExcluded(e.productId ?? null, e.productSlug ?? null, e.appName)
-  );
-  const filteredConversions = allConversions.filter(c =>
-    !isExcluded(c.productId ?? null, c.productSlug ?? null, c.appName)
-  );
+  const filteredEvents = allEvents.filter(e => !isExcluded(e.productId ?? null, e.productSlug ?? null, e.appName));
+  const filteredConversions = allConversions.filter(c => !isExcluded(c.productId ?? null, c.productSlug ?? null, c.appName));
 
-  // Score each active affiliate
   const scored = affiliates.map(a => ({
     affiliateId: a.id,
     refCode: a.refCode,
@@ -186,7 +273,6 @@ router.get("/stats/leaderboard", async (req, res) => {
       .reduce((s, c) => s + Number(c.commission), 0),
   }));
 
-  // Sort: commission desc → conversions desc → clicks desc
   const ranked = scored.sort(
     (a, b) => b.commission - a.commission || b.conversions - a.conversions || b.clicks - a.clicks
   );
@@ -200,10 +286,7 @@ router.get("/stats/leaderboard", async (req, res) => {
     commission: entry.commission,
   }));
 
-  // If caller provided a refCode and they're not in the list (shouldn't happen but safety net)
-  const excludedProductNames = products
-    .filter(p => p.excludeFromLeaderboard)
-    .map(p => p.name);
+  const excludedProductNames = products.filter(p => p.excludeFromLeaderboard).map(p => p.name);
 
   return res.json({
     enabled: true,
@@ -217,12 +300,7 @@ router.post("/cron/release-holds", async (req, res) => {
   const now = new Date();
 
   const expired = await db.select().from(conversionsTable)
-    .where(
-      and(
-        eq(conversionsTable.status, "HOLD"),
-        lte(conversionsTable.holdEndDate, now)
-      )
-    );
+    .where(and(eq(conversionsTable.status, "HOLD"), lte(conversionsTable.holdEndDate, now)));
 
   if (expired.length > 0) {
     for (const c of expired) {

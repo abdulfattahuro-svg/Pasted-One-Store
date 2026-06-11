@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { eq, ilike, or, and, desc } from "drizzle-orm";
+import { eq, ilike, or, and, desc, like } from "drizzle-orm";
 import { db, affiliatesTable, productsTable, conversionsTable, systemConfigTable } from "@workspace/db";
 import { leadsTable } from "@workspace/db";
 import { offerCommissionRulesTable } from "@workspace/db";
@@ -13,6 +13,11 @@ type LeadStatus = (typeof VALID_STATUSES)[number];
 function serializeLead(lead: typeof leadsTable.$inferSelect) {
   return {
     ...lead,
+    expectedValue: lead.expectedValue ?? null,
+    closedDealValue: lead.closedDealValue ?? null,
+    actualRevenue: lead.actualRevenue ?? null,
+    payoutAmount: lead.payoutAmount ?? null,
+    currency: lead.currency,
     metadata: lead.metadata ?? null,
     createdAt: lead.createdAt.toISOString(),
     updatedAt: lead.updatedAt.toISOString(),
@@ -24,10 +29,10 @@ function serializeLead(lead: typeof leadsTable.$inferSelect) {
   };
 }
 
-// ─── Commission trigger engine ────────────────────────────────
+// ─── Commission trigger engine ─────────────────────────────────────────────
+// Supports Fixed, Percentage (of deal value), Hybrid (fixed + % of deal value)
 async function triggerLeadCommission(lead: typeof leadsTable.$inferSelect, triggerEvent: string) {
   if (!lead.productId && !lead.productSlug) return;
-
   const offerId = lead.productId;
   if (!offerId) return;
 
@@ -41,7 +46,6 @@ async function triggerLeadCommission(lead: typeof leadsTable.$inferSelect, trigg
         eq(offerCommissionRulesTable.isActive, true)
       )
     );
-
   if (!rules.length) return;
 
   const rule = rules[0];
@@ -51,22 +55,31 @@ async function triggerLeadCommission(lead: typeof leadsTable.$inferSelect, trigg
     .select({ id: conversionsTable.id })
     .from(conversionsTable)
     .where(eq(conversionsTable.paymentId, paymentId));
-
   if (existing.length > 0) return;
 
   const [config] = await db.select().from(systemConfigTable);
   const holdDays = config?.holdDays ?? 14;
 
   const ruleValue = Number(rule.commissionValue);
-  let commission: number;
 
+  // Prefer closed deal value for won deals, fall back to expected value
+  const dealValue =
+    lead.closedDealValue && Number(lead.closedDealValue) > 0
+      ? Number(lead.closedDealValue)
+      : lead.expectedValue && Number(lead.expectedValue) > 0
+        ? Number(lead.expectedValue)
+        : null;
+
+  let commission: number;
   if (rule.commissionType === "fixed") {
     commission = ruleValue;
   } else if (rule.commissionType === "percentage") {
-    commission = ruleValue;
+    // e.g. ruleValue = 10 means 10% of deal value
+    commission = dealValue ? Math.round((ruleValue / 100) * dealValue) : ruleValue;
   } else if (rule.commissionType === "hybrid") {
+    // fixed + % of deal value
     const pct = rule.recurringPercentage ? Number(rule.recurringPercentage) : 0;
-    commission = ruleValue + pct;
+    commission = dealValue ? Math.round(ruleValue + (pct / 100) * dealValue) : ruleValue + pct;
   } else {
     commission = ruleValue;
   }
@@ -79,7 +92,7 @@ async function triggerLeadCommission(lead: typeof leadsTable.$inferSelect, trigg
     userId: `lead-${lead.id}`,
     appName: lead.productSlug ?? String(offerId),
     paymentId,
-    amount: String(ruleValue),
+    amount: String(dealValue ?? ruleValue),
     commission: String(commission),
     status: "HOLD",
     holdEndDate,
@@ -90,7 +103,7 @@ async function triggerLeadCommission(lead: typeof leadsTable.$inferSelect, trigg
   });
 }
 
-// ─── Log history ─────────────────────────────────────────────
+// ─── Log history ──────────────────────────────────────────────────────────
 async function logLeadHistory(
   leadId: number,
   previousStatus: string | null,
@@ -107,8 +120,7 @@ async function logLeadHistory(
   });
 }
 
-// ─── Routes ──────────────────────────────────────────────────
-
+// ─── GET /leads ───────────────────────────────────────────────────────────
 router.get("/leads", async (req, res) => {
   const { status, affiliateId, productSlug, search } = req.query as Record<string, string>;
 
@@ -154,8 +166,9 @@ router.get("/leads", async (req, res) => {
   })));
 });
 
+// ─── POST /leads ──────────────────────────────────────────────────────────
 router.post("/leads", async (req, res) => {
-  const { fullName, phone, email, notes, productId, productSlug: bodyProductSlug } = req.body as Record<string, unknown>;
+  const { fullName, phone, email, notes, productId, productSlug: bodyProductSlug, expectedValue, currency } = req.body as Record<string, unknown>;
   if (!fullName || typeof fullName !== "string" || !fullName.trim()) {
     return res.status(400).json({ error: "fullName is required" });
   }
@@ -205,6 +218,8 @@ router.post("/leads", async (req, res) => {
     email: email && typeof email === "string" ? email.trim() || null : null,
     notes: notes && typeof notes === "string" ? notes.trim() || null : null,
     source,
+    expectedValue: expectedValue != null ? String(expectedValue) : undefined,
+    currency: currency && typeof currency === "string" ? currency : "NGN",
   }).returning();
 
   await logLeadHistory(row.id, null, "new", undefined, "Lead created");
@@ -213,6 +228,40 @@ router.post("/leads", async (req, res) => {
   return res.status(201).json(serializeLead(row));
 });
 
+// ─── GET /leads/export — CSV (must be BEFORE /leads/:id) ─────────────────
+router.get("/leads/export", async (req, res) => {
+  const rows = await db.select().from(leadsTable).orderBy(desc(leadsTable.createdAt));
+
+  const affiliateIds = [...new Set(rows.map(r => r.affiliateId))];
+  const affiliates = affiliateIds.length > 0
+    ? await db.select({ id: affiliatesTable.id, name: affiliatesTable.name }).from(affiliatesTable)
+    : [];
+  const affiliateMap = new Map(affiliates.map(a => [a.id, a.name]));
+
+  const headers = [
+    "ID", "Full Name", "Email", "Phone", "Status", "Offer", "Affiliate", "Ref Code",
+    "Expected Value", "Closed Deal Value", "Revenue", "Payout Amount", "Currency",
+    "Notes", "Source", "Approved At", "Won At", "Created At",
+  ];
+
+  const esc = (v: string | null | undefined | number) =>
+    `"${String(v ?? "").replace(/"/g, '""').replace(/\n/g, " ")}"`;
+
+  const csvRows = rows.map(r => [
+    r.id, r.fullName, r.email ?? "", r.phone ?? "", r.status,
+    r.offerName ?? r.productSlug ?? "", affiliateMap.get(r.affiliateId) ?? "", r.affiliateCode,
+    r.expectedValue ?? "", r.closedDealValue ?? "", r.actualRevenue ?? "", r.payoutAmount ?? "",
+    r.currency, r.notes ?? "", r.source,
+    r.approvedAt?.toISOString() ?? "", r.wonAt?.toISOString() ?? "", r.createdAt.toISOString(),
+  ].map(esc).join(","));
+
+  const csv = [headers.map(esc).join(","), ...csvRows].join("\n");
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", `attachment; filename="leads-${Date.now()}.csv"`);
+  return res.send(csv);
+});
+
+// ─── GET /leads/:id — enriched single lead ────────────────────────────────
 router.get("/leads/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -220,9 +269,52 @@ router.get("/leads/:id", async (req, res) => {
   const [row] = await db.select().from(leadsTable).where(eq(leadsTable.id, id));
   if (!row) return res.status(404).json({ error: "Lead not found" });
 
-  return res.json(serializeLead(row));
+  const [affiliateRows, productRows, history, commissions] = await Promise.all([
+    db
+      .select({ id: affiliatesTable.id, name: affiliatesTable.name, email: affiliatesTable.email, refCode: affiliatesTable.refCode })
+      .from(affiliatesTable)
+      .where(eq(affiliatesTable.id, row.affiliateId)),
+    row.productId
+      ? db
+          .select({ id: productsTable.id, name: productsTable.name, slug: productsTable.slug })
+          .from(productsTable)
+          .where(eq(productsTable.id, row.productId))
+      : Promise.resolve([]),
+    db
+      .select()
+      .from(leadHistoryTable)
+      .where(eq(leadHistoryTable.leadId, id))
+      .orderBy(desc(leadHistoryTable.createdAt)),
+    db
+      .select()
+      .from(conversionsTable)
+      .where(
+        and(
+          eq(conversionsTable.affiliateId, row.affiliateId),
+          like(conversionsTable.paymentId, `lead-${id}-%`)
+        )
+      )
+      .orderBy(desc(conversionsTable.conversionDate)),
+  ]);
+
+  return res.json({
+    ...serializeLead(row),
+    affiliate: affiliateRows[0] ?? null,
+    product: productRows[0] ?? null,
+    history: history.map(h => ({ ...h, createdAt: h.createdAt.toISOString() })),
+    commissions: commissions.map(c => ({
+      id: c.id,
+      paymentId: c.paymentId,
+      conversionType: c.conversionType,
+      commission: Number(c.commission),
+      amount: Number(c.amount),
+      status: c.status,
+      conversionDate: c.conversionDate.toISOString(),
+    })),
+  });
 });
 
+// ─── GET /leads/:id/history ───────────────────────────────────────────────
 router.get("/leads/:id/history", async (req, res) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -239,11 +331,16 @@ router.get("/leads/:id/history", async (req, res) => {
   })));
 });
 
+// ─── PATCH /leads/:id — update status + deal values ──────────────────────
 router.patch("/leads/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
 
-  const { status, notes, rejectedReason } = req.body as Record<string, unknown>;
+  const {
+    status, notes, rejectedReason,
+    expectedValue, closedDealValue, actualRevenue, payoutAmount, currency,
+  } = req.body as Record<string, unknown>;
+
   const adminLabel = (req.session as Record<string, unknown>)?.adminEmail
     ? String((req.session as Record<string, unknown>).adminEmail)
     : "admin";
@@ -256,6 +353,23 @@ router.patch("/leads/:id", async (req, res) => {
   };
 
   if (notes !== undefined) updates.notes = notes === null ? null : String(notes);
+
+  // Deal value fields
+  if (expectedValue !== undefined) {
+    updates.expectedValue = expectedValue === null ? null : String(expectedValue);
+  }
+  if (closedDealValue !== undefined) {
+    updates.closedDealValue = closedDealValue === null ? null : String(closedDealValue);
+  }
+  if (actualRevenue !== undefined) {
+    updates.actualRevenue = actualRevenue === null ? null : String(actualRevenue);
+  }
+  if (payoutAmount !== undefined) {
+    updates.payoutAmount = payoutAmount === null ? null : String(payoutAmount);
+  }
+  if (currency !== undefined && typeof currency === "string") {
+    updates.currency = currency;
+  }
 
   if (status) {
     if (!VALID_STATUSES.includes(status as LeadStatus)) {
@@ -301,6 +415,7 @@ router.patch("/leads/:id", async (req, res) => {
   return res.json(serializeLead(row));
 });
 
+// ─── GET /affiliates/:id/leads ────────────────────────────────────────────
 router.get("/affiliates/:id/leads", async (req, res) => {
   const id = Number(req.params.id);
   if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
@@ -336,6 +451,54 @@ router.get("/affiliates/:id/leads", async (req, res) => {
     ...serializeLead(r),
     product: r.productId ? (productMap.get(r.productId) ?? null) : null,
   })));
+});
+
+// ─── GET /affiliates/:id/lead-stats — financial stats for portal ──────────
+router.get("/affiliates/:id/lead-stats", async (req, res) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+  if (req.session.affiliateId && req.session.affiliateId !== id) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const [leads, commissions] = await Promise.all([
+    db.select().from(leadsTable).where(eq(leadsTable.affiliateId, id)),
+    db.select().from(conversionsTable).where(
+      and(
+        eq(conversionsTable.affiliateId, id),
+        eq(conversionsTable.source, "lead_trigger")
+      )
+    ),
+  ]);
+
+  const totalLeads = leads.length;
+  const wonLeads = leads.filter(l => l.status === "won").length;
+  const approvedLeads = leads.filter(l => l.status === "approved" || l.status === "won").length;
+  const winRate = totalLeads > 0 ? Math.round((wonLeads / totalLeads) * 100) : 0;
+
+  const totalExpectedValue = leads.reduce((s, l) => s + (l.expectedValue ? Number(l.expectedValue) : 0), 0);
+  const totalWonValue = leads
+    .filter(l => l.status === "won")
+    .reduce((s, l) => s + (l.closedDealValue ? Number(l.closedDealValue) : 0), 0);
+
+  const holdEarnings = commissions.filter(c => c.status === "HOLD").reduce((s, c) => s + Number(c.commission), 0);
+  const payableEarnings = commissions.filter(c => c.status === "PAYABLE").reduce((s, c) => s + Number(c.commission), 0);
+  const paidEarnings = commissions.filter(c => c.status === "PAID").reduce((s, c) => s + Number(c.commission), 0);
+  const totalEarnings = commissions.reduce((s, c) => s + Number(c.commission), 0);
+
+  return res.json({
+    totalLeads,
+    wonLeads,
+    approvedLeads,
+    winRate,
+    totalExpectedValue,
+    totalWonValue,
+    holdEarnings,
+    payableEarnings,
+    paidEarnings,
+    totalEarnings,
+  });
 });
 
 export default router;

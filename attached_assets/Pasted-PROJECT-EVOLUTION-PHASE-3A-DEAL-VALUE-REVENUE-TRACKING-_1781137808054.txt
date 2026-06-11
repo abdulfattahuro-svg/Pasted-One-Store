@@ -1,0 +1,324 @@
+PROJECT EVOLUTION PHASE 3A: DEAL VALUE + REVENUE TRACKING + ADVANCED COMMISSION ENGINE
+
+Analyze the existing codebase before making changes.
+
+Phase 2B introduced:
+
+* Leads
+* Lead Processing
+* Commission Triggers
+* Kanban CRM
+* Audit Trail
+* Automated Commissions
+
+We discovered a critical limitation:
+
+Percentage-based commissions are currently weak because leads do not store deal value.
+
+This phase fixes that and makes the platform usable for high-value businesses such as:
+
+* Solar
+* Real Estate
+* Insurance
+* Construction
+* Consulting
+* Vehicle sales
+* Travel agencies
+* High-ticket courses
+* Agency retainers
+
+IMPORTANT
+
+Do not remove existing functionality.
+
+Maintain compatibility with:
+
+* Offers
+* Affiliates
+* Leads
+* Referral tracking
+* Conversions
+* Existing commissions
+* Payouts
+* Kanban board
+* APIs
+
+==================================================
+PART 1 — DEAL VALUE SYSTEM
+==========================
+
+Enhance leads table.
+
+Add fields:
+
+* dealValue
+* currency
+* expectedValue
+* actualRevenue
+* closedDealValue
+* payoutAmount
+
+Purpose:
+
+expectedValue
+
+Potential estimated deal value.
+
+Example:
+
+₦2,500,000 solar project
+
+closedDealValue
+
+Final deal value after closing.
+
+Example:
+
+₦2,200,000
+
+actualRevenue
+
+Revenue earned by business.
+
+Example:
+
+₦1,950,000
+
+payoutAmount
+
+Final affiliate payout amount.
+
+==================================================
+PART 2 — DEAL VALUE EDITING
+===========================
+
+Admin can edit deal values from:
+
+* Lead detail
+* Kanban card modal
+* Lead list
+
+Fields editable:
+
+Expected Value
+Closed Deal Value
+Revenue
+Notes
+
+==================================================
+PART 3 — FIX PERCENTAGE COMMISSIONS
+===================================
+
+Commission engine must support:
+
+Fixed
+
+Percentage
+
+Hybrid
+
+Examples:
+
+Solar:
+
+10% of deal value
+
+Real Estate:
+
+2% of sale
+
+Insurance:
+
+15% of premium
+
+Hybrid:
+
+₦5,000 + 5%
+
+Logic:
+
+If commission type = percentage:
+
+Use:
+
+closedDealValue
+
+If unavailable:
+
+fallback:
+
+expectedValue
+
+If commission type = hybrid:
+
+calculate both:
+
+fixed + percentage
+
+==================================================
+PART 4 — MULTI-TRIGGER COMMISSION ENGINE
+========================================
+
+Current triggers:
+
+* lead_submitted
+* lead_approved
+* deal_won
+
+Enhance engine:
+
+Allow multiple payouts across journey.
+
+Example:
+
+Solar
+
+Lead Submitted → ₦500
+
+Approved → ₦2,000
+
+Won → 5% of deal
+
+Software
+
+Signup → ₦500
+
+Purchase → 20%
+
+Renewal → 10%
+
+Prevent duplicate trigger payouts.
+
+Maintain deduplication.
+
+==================================================
+PART 5 — LEAD DETAIL VIEW
+=========================
+
+Create Lead Detail Drawer/Page.
+
+Shows:
+
+Lead information
+
+Timeline
+
+Status history
+
+Affiliate
+
+Offer
+
+Commission history
+
+Deal values
+
+Revenue generated
+
+Notes
+
+Payout information
+
+==================================================
+PART 6 — LEAD ECONOMICS DASHBOARD
+=================================
+
+Add metrics:
+
+Total Deal Value
+
+Closed Deal Value
+
+Revenue Generated
+
+Average Deal Size
+
+Top Affiliates by Revenue
+
+Top Offers by Revenue
+
+Lead → Revenue Conversion %
+
+Expected vs Closed Revenue
+
+==================================================
+PART 7 — AFFILIATE PORTAL IMPROVEMENTS
+======================================
+
+Affiliate can see:
+
+Lead Estimated Value
+
+Won Deal Value
+
+Expected Earnings
+
+Paid Earnings
+
+Pending Earnings
+
+Revenue Generated
+
+Top Performing Offers
+
+==================================================
+PART 8 — EXPORTS
+================
+
+Add CSV export for:
+
+Leads
+
+Revenue
+
+Commission reports
+
+Affiliate earnings
+
+==================================================
+PART 9 — FINANCIAL PREPARATION
+==============================
+
+Prepare architecture for:
+
+Wallet system
+
+Payable balances
+
+Withdrawal requests
+
+Disputes
+
+Do not implement yet.
+
+Only structure cleanly.
+
+==================================================
+IMPORTANT
+=========
+
+Do NOT implement yet:
+
+* Webhooks
+* External CRM sync
+* SaaS
+* Multi-business
+* Wallet withdrawals
+
+Focus on financial completeness first.
+
+==================================================
+DELIVERABLES
+============
+
+After implementation provide:
+
+1. Database changes
+2. Commission engine updates
+3. Revenue tracking logic
+4. Dashboard updates
+5. Lead detail system
+6. Portal updates
+7. CSV exports
+8. Technical debt
+9. Recommended Phase 3B

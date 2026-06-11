@@ -1,6 +1,7 @@
 import { useGetDashboardStats, useGetStatsByApp, useGetTopAffiliates, useGetEarningsTimeline, useReleaseHolds } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, CartesianGrid } from "recharts";
-import { ArrowUpRight, Users, MousePointer, UserPlus, TrendingUp, Clock, CheckCircle, DollarSign, RefreshCw, UserCheck } from "lucide-react";
+import { ArrowUpRight, Users, MousePointer, UserPlus, TrendingUp, Clock, CheckCircle, DollarSign, RefreshCw, UserCheck, BarChart2, Award } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 function StatCard({ label, value, sub, icon: Icon, color = "text-primary" }: {
@@ -30,6 +31,22 @@ function fmtCurrency(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 }).format(n);
 }
 
+function fmtCompact(n: number) {
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}k`;
+  return fmtCurrency(n);
+}
+
+type LeadEconomics = {
+  totalExpectedValue: number;
+  totalClosedDealValue: number;
+  totalActualRevenue: number;
+  avgDealSize: number;
+  totalLeadCommissions: number;
+  topAffiliatesByRevenue: Array<{ affiliateId: number; name: string; refCode: string; closedValue: number; commission: number; leads: number }>;
+  topOffersByRevenue: Array<{ offerId: number; name: string; slug: string; closedValue: number; commission: number; leads: number; wonLeads: number }>;
+};
+
 const APP_LABELS: Record<string, string> = {};
 
 export default function Dashboard() {
@@ -39,6 +56,15 @@ export default function Dashboard() {
   const { data: timeline } = useGetEarningsTimeline();
   const releaseHolds = useReleaseHolds();
   const { toast } = useToast();
+
+  const { data: economics } = useQuery<LeadEconomics>({
+    queryKey: ["lead-economics"],
+    queryFn: async () => {
+      const res = await fetch("/api/stats/lead-economics", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+  });
 
   const handleReleaseHolds = () => {
     releaseHolds.mutate(undefined, {
@@ -60,6 +86,8 @@ export default function Dashboard() {
     );
   }
 
+  const s = stats as Record<string, number> | undefined;
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -79,7 +107,7 @@ export default function Dashboard() {
         </button>
       </div>
 
-      {/* Stats grid */}
+      {/* Referral stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <StatCard label="Total Affiliates" value={fmt(stats?.totalAffiliates ?? 0)} sub={`${stats?.activeAffiliates ?? 0} active`} icon={Users} />
         <StatCard label="Total Clicks" value={fmt(stats?.totalClicks ?? 0)} icon={MousePointer} color="text-blue-400" />
@@ -88,13 +116,124 @@ export default function Dashboard() {
         <StatCard label="Total Revenue" value={fmtCurrency(stats?.totalRevenue ?? 0)} icon={DollarSign} color="text-amber-400" />
       </div>
 
-      {/* Leads stats */}
+      {/* Lead pipeline stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard label="Total Leads" value={fmt((stats as Record<string, number> | undefined)?.totalLeads ?? 0)} sub="all time" icon={UserCheck} color="text-cyan-400" />
-        <StatCard label="Approved Leads" value={fmt((stats as Record<string, number> | undefined)?.approvedLeads ?? 0)} sub="approved + won" icon={UserCheck} color="text-sky-400" />
-        <StatCard label="Won Leads" value={fmt((stats as Record<string, number> | undefined)?.wonLeads ?? 0)} sub={`${(stats as Record<string, number> | undefined)?.leadConversionPct ?? 0}% win rate`} icon={TrendingUp} color="text-emerald-400" />
-        <StatCard label="Lead Revenue" value={fmtCurrency((stats as Record<string, number> | undefined)?.leadRevenue ?? 0)} sub="from lead commissions" icon={DollarSign} color="text-amber-400" />
+        <StatCard label="Total Leads" value={fmt(s?.totalLeads ?? 0)} sub="all time" icon={UserCheck} color="text-cyan-400" />
+        <StatCard label="Approved Leads" value={fmt(s?.approvedLeads ?? 0)} sub="approved + won" icon={UserCheck} color="text-sky-400" />
+        <StatCard label="Won Leads" value={fmt(s?.wonLeads ?? 0)} sub={`${s?.leadConversionPct ?? 0}% win rate`} icon={TrendingUp} color="text-emerald-400" />
+        <StatCard label="Lead Commissions" value={fmtCurrency(s?.leadRevenue ?? 0)} sub="from lead triggers" icon={DollarSign} color="text-amber-400" />
       </div>
+
+      {/* Lead economics - deal values */}
+      {economics && (economics.totalExpectedValue > 0 || economics.totalClosedDealValue > 0) && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <BarChart2 className="w-4 h-4 text-muted-foreground" />
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Lead Economics</h2>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-card border border-border rounded p-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">Total Pipeline</p>
+              <p className="text-2xl font-bold mt-1 tabular-nums text-violet-400">{fmtCompact(economics.totalExpectedValue)}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">expected value</p>
+            </div>
+            <div className="bg-card border border-border rounded p-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">Closed Revenue</p>
+              <p className="text-2xl font-bold mt-1 tabular-nums text-emerald-400">{fmtCompact(economics.totalClosedDealValue)}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">from won deals</p>
+            </div>
+            <div className="bg-card border border-border rounded p-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">Avg Deal Size</p>
+              <p className="text-2xl font-bold mt-1 tabular-nums text-sky-400">{fmtCompact(economics.avgDealSize)}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">per lead</p>
+            </div>
+            <div className="bg-card border border-border rounded p-4">
+              <p className="text-xs text-muted-foreground uppercase tracking-wider">Actual Revenue</p>
+              <p className="text-2xl font-bold mt-1 tabular-nums text-primary">{fmtCompact(economics.totalActualRevenue || economics.totalClosedDealValue)}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">recorded revenue</p>
+            </div>
+          </div>
+
+          {/* Top affiliates by revenue + top offers */}
+          <div className="grid grid-cols-2 gap-4">
+            {economics.topAffiliatesByRevenue.length > 0 && (
+              <div className="bg-card border border-border rounded overflow-hidden">
+                <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+                  <Award className="w-3.5 h-3.5 text-amber-400" />
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Top Affiliates by Revenue</p>
+                </div>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border text-[10px] uppercase tracking-wider text-muted-foreground">
+                      <th className="text-left px-4 py-2">Affiliate</th>
+                      <th className="text-right px-4 py-2">Closed</th>
+                      <th className="text-right px-4 py-2">Commission</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {economics.topAffiliatesByRevenue.map((a, i) => (
+                      <tr key={a.affiliateId} className="border-b border-border last:border-0 hover:bg-accent/30">
+                        <td className="px-4 py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-muted-foreground w-4 tabular-nums">#{i + 1}</span>
+                            <div>
+                              <p className="font-medium">{a.name}</p>
+                              <p className="text-[10px] font-mono text-muted-foreground">{a.refCode}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 text-right font-semibold text-emerald-400 tabular-nums">
+                          {a.closedValue > 0 ? fmtCompact(a.closedValue) : "—"}
+                        </td>
+                        <td className="px-4 py-2 text-right font-semibold text-primary tabular-nums">
+                          {fmtCompact(a.commission)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {economics.topOffersByRevenue.length > 0 && (
+              <div className="bg-card border border-border rounded overflow-hidden">
+                <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+                  <BarChart2 className="w-3.5 h-3.5 text-violet-400" />
+                  <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Top Offers by Revenue</p>
+                </div>
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-border text-[10px] uppercase tracking-wider text-muted-foreground">
+                      <th className="text-left px-4 py-2">Offer</th>
+                      <th className="text-right px-4 py-2">Leads</th>
+                      <th className="text-right px-4 py-2">Won</th>
+                      <th className="text-right px-4 py-2">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {economics.topOffersByRevenue.map((o, i) => (
+                      <tr key={o.offerId} className="border-b border-border last:border-0 hover:bg-accent/30">
+                        <td className="px-4 py-2">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-muted-foreground w-4 tabular-nums">#{i + 1}</span>
+                            <p className="font-medium">{o.name}</p>
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{o.leads}</td>
+                        <td className="px-4 py-2 text-right tabular-nums text-emerald-400">{o.wonLeads}</td>
+                        <td className="px-4 py-2 text-right font-semibold text-primary tabular-nums">
+                          {o.closedValue > 0 ? fmtCompact(o.closedValue) : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Earnings breakdown */}
       <div className="grid grid-cols-3 gap-3">
@@ -126,7 +265,6 @@ export default function Dashboard() {
 
       {/* Charts row */}
       <div className="grid grid-cols-3 gap-4">
-        {/* Earnings timeline */}
         <div className="col-span-2 bg-card border border-border rounded p-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Earnings — Last 30 Days</p>
           <ResponsiveContainer width="100%" height={180}>
@@ -148,7 +286,6 @@ export default function Dashboard() {
           </ResponsiveContainer>
         </div>
 
-        {/* By app */}
         <div className="bg-card border border-border rounded p-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">By Offer</p>
           <ResponsiveContainer width="100%" height={180}>

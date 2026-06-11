@@ -14,9 +14,12 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   Search, Filter, UserCheck, Phone, Mail, Package, Clock, CheckCircle,
   XCircle, Users, TrendingUp, AlertCircle, ChevronDown, List, LayoutGrid,
-  ThumbsUp, ThumbsDown, Milestone,
+  ThumbsUp, ThumbsDown, Milestone, Eye, X, Edit2, DollarSign,
+  History, Activity, Download,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+
+const CURRENCIES = ["NGN", "USD", "GHS", "KES", "ZAR", "GBP", "EUR"];
 
 type Lead = {
   id: number;
@@ -31,6 +34,11 @@ type Lead = {
   notes: string | null;
   status: string;
   source: string;
+  expectedValue: string | null;
+  closedDealValue: string | null;
+  actualRevenue: string | null;
+  payoutAmount: string | null;
+  currency: string;
   approvedAt: string | null;
   rejectedAt: string | null;
   rejectedReason: string | null;
@@ -42,8 +50,43 @@ type Lead = {
   product: { id: number; name: string; slug: string } | null;
 };
 
+type EnrichedLead = Lead & {
+  affiliate: { id: number; name: string; email: string; refCode: string } | null;
+  history: Array<{
+    id: number;
+    previousStatus: string | null;
+    newStatus: string;
+    changedBy: string | null;
+    notes: string | null;
+    createdAt: string;
+  }>;
+  commissions: Array<{
+    id: number;
+    paymentId: string;
+    conversionType: string | null;
+    commission: number;
+    amount: number;
+    status: string;
+    conversionDate: string;
+  }>;
+};
+
 type Product = { id: number; name: string; slug: string; active: boolean };
 type Affiliate = { id: number; name: string; email: string; refCode: string };
+
+function fmtDealValue(value: string | null | undefined, currency = "NGN"): string | null {
+  if (!value) return null;
+  const n = Number(value);
+  if (isNaN(n) || n === 0) return null;
+  try {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency", currency,
+      minimumFractionDigits: 0, maximumFractionDigits: 0,
+    }).format(n);
+  } catch {
+    return `${currency} ${n.toLocaleString()}`;
+  }
+}
 
 async function apiFetch(path: string, options?: RequestInit) {
   const res = await fetch(`/api${path}`, {
@@ -79,6 +122,12 @@ const COLUMNS = [
   { id: "lost", label: "Lost" },
   { id: "rejected", label: "Rejected" },
 ];
+
+const COMMISSION_STATUS_COLORS: Record<string, string> = {
+  HOLD: "text-amber-400",
+  PAYABLE: "text-blue-400",
+  PAID: "text-emerald-400",
+};
 
 function StatusBadge({ status }: { status: string }) {
   const meta = STATUS_META[status];
@@ -117,10 +166,381 @@ function StatusDropdown({ leadId, current, onUpdate }: { leadId: number; current
   );
 }
 
-// ─── Kanban card (draggable) ──────────────────────────────────
-function KanbanCard({ lead, onUpdate, isDraggingOverlay = false }: {
+// ─── Lead Detail Drawer ────────────────────────────────────────────────────
+function LeadDetailDrawer({ leadId, onClose, onSaved }: {
+  leadId: number;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [editingValues, setEditingValues] = useState(false);
+  const [editForm, setEditForm] = useState({
+    expectedValue: "", closedDealValue: "", actualRevenue: "", payoutAmount: "",
+    currency: "NGN", notes: "",
+  });
+
+  const { data: lead, isLoading } = useQuery<EnrichedLead>({
+    queryKey: ["lead-detail", leadId],
+    queryFn: () => apiFetch(`/leads/${leadId}`),
+    onSuccess: (data: EnrichedLead) => {
+      setEditForm({
+        expectedValue: data.expectedValue ?? "",
+        closedDealValue: data.closedDealValue ?? "",
+        actualRevenue: data.actualRevenue ?? "",
+        payoutAmount: data.payoutAmount ?? "",
+        currency: data.currency ?? "NGN",
+        notes: data.notes ?? "",
+      });
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: (values: typeof editForm) =>
+      apiFetch(`/leads/${leadId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          expectedValue: values.expectedValue || null,
+          closedDealValue: values.closedDealValue || null,
+          actualRevenue: values.actualRevenue || null,
+          payoutAmount: values.payoutAmount || null,
+          currency: values.currency,
+          notes: values.notes || null,
+        }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["lead-detail", leadId] });
+      setEditingValues(false);
+      toast({ title: "Lead updated" });
+      onSaved();
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: (status: string) =>
+      apiFetch(`/leads/${leadId}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["lead-detail", leadId] });
+      toast({ title: "Status updated" });
+      onSaved();
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const totalCommission = (lead?.commissions ?? []).reduce((s, c) => s + c.commission, 0);
+  const hasValues = lead && (lead.expectedValue || lead.closedDealValue || lead.actualRevenue || lead.payoutAmount);
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative z-10 w-full max-w-lg bg-background border-l border-border flex flex-col shadow-2xl">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-card flex-shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+              <UserCheck className="w-4 h-4 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold truncate">{lead?.fullName ?? "Loading…"}</p>
+              {lead && (
+                <p className="text-[10px] text-muted-foreground">
+                  Lead #{lead.id} · {new Date(lead.createdAt).toLocaleDateString()}
+                </p>
+              )}
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded hover:bg-accent transition-colors">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {isLoading ? (
+          <div className="flex-1 p-5 space-y-3">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="h-12 bg-card border border-border rounded animate-pulse" />
+            ))}
+          </div>
+        ) : !lead ? (
+          <div className="flex-1 flex items-center justify-center text-sm text-muted-foreground">Lead not found</div>
+        ) : (
+          <div className="flex-1 overflow-y-auto p-5 space-y-5">
+            {/* Status controls */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {STATUS_META[lead.status] && (() => {
+                const meta = STATUS_META[lead.status];
+                const Icon = meta.icon;
+                return (
+                  <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded border ${meta.color}`}>
+                    <Icon className="w-3 h-3" /> {meta.label}
+                  </span>
+                );
+              })()}
+              <p className="text-[10px] text-muted-foreground">Move to:</p>
+              {STATUSES.filter(s => s !== lead.status).map(s => (
+                <button
+                  key={s}
+                  onClick={() => statusMutation.mutate(s)}
+                  disabled={statusMutation.isPending}
+                  className="text-[10px] px-2 py-0.5 rounded border border-border hover:bg-accent text-muted-foreground transition-colors disabled:opacity-40"
+                >
+                  {STATUS_META[s]?.label ?? s}
+                </button>
+              ))}
+            </div>
+
+            {/* Lead Info */}
+            <section className="space-y-2">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Lead Information</p>
+              <div className="bg-card border border-border rounded p-3 space-y-2">
+                {lead.email && (
+                  <div className="flex items-center gap-2">
+                    <Mail className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                    <p className="text-xs">{lead.email}</p>
+                  </div>
+                )}
+                {lead.phone && (
+                  <div className="flex items-center gap-2">
+                    <Phone className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                    <p className="text-xs">{lead.phone}</p>
+                  </div>
+                )}
+                {(lead.product?.name || lead.offerName) && (
+                  <div className="flex items-center gap-2">
+                    <Package className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                    <p className="text-xs">{lead.product?.name ?? lead.offerName}</p>
+                  </div>
+                )}
+                {lead.affiliate && (
+                  <div className="flex items-center gap-2">
+                    <Users className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                    <p className="text-xs">
+                      {lead.affiliate.name}
+                      {(lead.affiliate as { refCode?: string }).refCode && (
+                        <span className="font-mono text-muted-foreground ml-1">
+                          ({(lead.affiliate as { refCode: string }).refCode})
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <Activity className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                  <p className="text-xs text-muted-foreground capitalize">{lead.source.replace(/_/g, " ")}</p>
+                </div>
+                {lead.approvedAt && (
+                  <div className="flex items-center gap-2">
+                    <ThumbsUp className="w-3 h-3 text-sky-400 flex-shrink-0" />
+                    <p className="text-xs text-muted-foreground">Approved {new Date(lead.approvedAt).toLocaleDateString()}</p>
+                  </div>
+                )}
+                {lead.wonAt && (
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+                    <p className="text-xs text-muted-foreground">Won {new Date(lead.wonAt).toLocaleDateString()}</p>
+                  </div>
+                )}
+                {lead.rejectedAt && (
+                  <div className="flex items-center gap-2">
+                    <XCircle className="w-3 h-3 text-rose-400 flex-shrink-0" />
+                    <p className="text-xs text-muted-foreground">
+                      Rejected {new Date(lead.rejectedAt).toLocaleDateString()}
+                      {lead.rejectedReason && ` — ${lead.rejectedReason}`}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </section>
+
+            {/* Deal Values */}
+            <section className="space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
+                  <DollarSign className="w-3 h-3" /> Deal Values
+                </p>
+                <button
+                  onClick={() => {
+                    if (editingValues) {
+                      setEditForm({
+                        expectedValue: lead.expectedValue ?? "",
+                        closedDealValue: lead.closedDealValue ?? "",
+                        actualRevenue: lead.actualRevenue ?? "",
+                        payoutAmount: lead.payoutAmount ?? "",
+                        currency: lead.currency ?? "NGN",
+                        notes: lead.notes ?? "",
+                      });
+                    }
+                    setEditingValues(v => !v);
+                  }}
+                  className="text-[10px] px-2 py-0.5 rounded border border-border hover:bg-accent transition-colors flex items-center gap-1"
+                >
+                  <Edit2 className="w-2.5 h-2.5" />
+                  {editingValues ? "Cancel" : "Edit"}
+                </button>
+              </div>
+
+              {editingValues ? (
+                <div className="bg-card border border-border rounded p-3 space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    {(["expectedValue", "closedDealValue", "actualRevenue", "payoutAmount"] as const).map(key => {
+                      const labels: Record<string, string> = {
+                        expectedValue: "Expected Value",
+                        closedDealValue: "Closed Deal Value",
+                        actualRevenue: "Revenue",
+                        payoutAmount: "Payout Amount",
+                      };
+                      return (
+                        <div key={key}>
+                          <label className="text-[10px] text-muted-foreground block mb-1">{labels[key]}</label>
+                          <input
+                            type="number"
+                            value={editForm[key]}
+                            onChange={e => setEditForm(f => ({ ...f, [key]: e.target.value }))}
+                            placeholder="0"
+                            min="0"
+                            className="w-full text-xs bg-background border border-border rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-muted-foreground block mb-1">Currency</label>
+                      <select
+                        value={editForm.currency}
+                        onChange={e => setEditForm(f => ({ ...f, currency: e.target.value }))}
+                        className="w-full text-xs bg-background border border-border rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary"
+                      >
+                        {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-muted-foreground block mb-1">Notes</label>
+                    <textarea
+                      value={editForm.notes}
+                      onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))}
+                      rows={2}
+                      placeholder="Internal notes about this deal…"
+                      className="w-full text-xs bg-background border border-border rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+                    />
+                  </div>
+                  <button
+                    onClick={() => saveMutation.mutate(editForm)}
+                    disabled={saveMutation.isPending}
+                    className="text-xs bg-primary text-primary-foreground font-semibold px-3 py-1.5 rounded hover:bg-primary/90 transition-colors disabled:opacity-50"
+                  >
+                    {saveMutation.isPending ? "Saving…" : "Save Changes"}
+                  </button>
+                </div>
+              ) : (
+                <div className="bg-card border border-border rounded p-3 space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: "Expected Value", value: fmtDealValue(lead.expectedValue, lead.currency), color: "text-violet-400" },
+                      { label: "Closed Deal Value", value: fmtDealValue(lead.closedDealValue, lead.currency), color: "text-emerald-400" },
+                      { label: "Revenue", value: fmtDealValue(lead.actualRevenue, lead.currency), color: "text-primary" },
+                      { label: "Payout Amount", value: fmtDealValue(lead.payoutAmount, lead.currency), color: "text-amber-400" },
+                    ].map(({ label, value, color }) => (
+                      <div key={label}>
+                        <p className="text-[10px] text-muted-foreground">{label}</p>
+                        <p className={`text-sm font-bold tabular-nums ${value ? color : "text-muted-foreground/50"}`}>
+                          {value ?? "—"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center justify-between pt-1 border-t border-border">
+                    <p className="text-[10px] text-muted-foreground">Currency: <span className="font-mono font-semibold text-foreground">{lead.currency}</span></p>
+                    {!hasValues && <p className="text-[10px] text-muted-foreground italic">No deal values set — click Edit to add</p>}
+                  </div>
+                  {lead.notes && (
+                    <div className="pt-1 border-t border-border">
+                      <p className="text-[10px] text-muted-foreground mb-0.5">Notes</p>
+                      <p className="text-xs text-muted-foreground italic">{lead.notes}</p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+
+            {/* Commissions */}
+            {lead.commissions.length > 0 && (
+              <section className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Commissions Triggered</p>
+                  <span className="text-[10px] font-bold text-primary tabular-nums">
+                    {fmtDealValue(String(totalCommission), lead.currency) ?? `${lead.currency} ${totalCommission.toLocaleString()}`} total
+                  </span>
+                </div>
+                <div className="bg-card border border-border rounded divide-y divide-border overflow-hidden">
+                  {lead.commissions.map(c => (
+                    <div key={c.id} className="px-3 py-2 flex items-center justify-between">
+                      <div>
+                        <p className="text-xs font-medium capitalize">{(c.conversionType ?? "commission").replace(/_/g, " ")}</p>
+                        <p className="text-[10px] text-muted-foreground">{new Date(c.conversionDate).toLocaleDateString()}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs font-bold tabular-nums text-primary">
+                          +{fmtDealValue(String(c.commission), lead.currency) ?? c.commission.toLocaleString()}
+                        </p>
+                        <span className={`text-[10px] font-semibold ${COMMISSION_STATUS_COLORS[c.status] ?? "text-muted-foreground"}`}>
+                          {c.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Status Timeline */}
+            {lead.history.length > 0 && (
+              <section className="space-y-2 pb-4">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold flex items-center gap-1">
+                  <History className="w-3 h-3" /> Status Timeline
+                </p>
+                <div className="space-y-0">
+                  {[...lead.history].reverse().map((h, i, arr) => (
+                    <div key={h.id} className="flex items-start gap-2">
+                      <div className="flex flex-col items-center pt-1">
+                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${i === arr.length - 1 ? "bg-primary" : "bg-muted-foreground/40"}`} />
+                        {i < arr.length - 1 && <div className="w-px flex-1 bg-border min-h-4 mt-0.5" />}
+                      </div>
+                      <div className="pb-3 min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {h.previousStatus && (
+                            <>
+                              <span className="text-[10px] text-muted-foreground capitalize">{h.previousStatus}</span>
+                              <span className="text-[10px] text-muted-foreground">→</span>
+                            </>
+                          )}
+                          <span className="text-[10px] font-semibold capitalize">{h.newStatus}</span>
+                          {h.changedBy && <span className="text-[10px] text-muted-foreground">by {h.changedBy}</span>}
+                        </div>
+                        {h.notes && <p className="text-[10px] text-muted-foreground italic mt-0.5">{h.notes}</p>}
+                        <p className="text-[9px] text-muted-foreground mt-0.5">{new Date(h.createdAt).toLocaleString()}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Kanban card ──────────────────────────────────────────────────────────
+function KanbanCard({ lead, onUpdate, onOpen, isDraggingOverlay = false }: {
   lead: Lead;
   onUpdate: (id: number, status: string) => void;
+  onOpen: (id: number) => void;
   isDraggingOverlay?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
@@ -129,6 +549,7 @@ function KanbanCard({ lead, onUpdate, isDraggingOverlay = false }: {
   });
 
   const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined;
+  const dealLabel = fmtDealValue(lead.closedDealValue ?? lead.expectedValue, lead.currency);
 
   return (
     <div
@@ -142,7 +563,14 @@ function KanbanCard({ lead, onUpdate, isDraggingOverlay = false }: {
     >
       <div className="flex items-start justify-between gap-2">
         <p className="text-xs font-semibold leading-tight">{lead.fullName}</p>
-        <Milestone className="w-3 h-3 text-muted-foreground flex-shrink-0 mt-0.5" />
+        <button
+          onPointerDown={e => e.stopPropagation()}
+          onClick={e => { e.stopPropagation(); onOpen(lead.id); }}
+          className="p-0.5 rounded hover:bg-accent transition-colors flex-shrink-0"
+          title="View details"
+        >
+          <Eye className="w-3 h-3 text-muted-foreground hover:text-foreground" />
+        </button>
       </div>
       {(lead.email || lead.phone) && (
         <div className="space-y-0.5">
@@ -166,6 +594,12 @@ function KanbanCard({ lead, onUpdate, isDraggingOverlay = false }: {
           <p className="text-[10px] text-muted-foreground truncate">{lead.product?.name ?? lead.offerName}</p>
         </div>
       )}
+      {dealLabel && (
+        <div className="flex items-center gap-1">
+          <DollarSign className="w-2.5 h-2.5 text-primary flex-shrink-0" />
+          <p className="text-[10px] font-semibold text-primary">{dealLabel}</p>
+        </div>
+      )}
       {lead.affiliate && (
         <p className="text-[10px] font-mono text-muted-foreground">{lead.affiliate.name}</p>
       )}
@@ -182,11 +616,12 @@ function KanbanCard({ lead, onUpdate, isDraggingOverlay = false }: {
   );
 }
 
-// ─── Kanban column (droppable) ────────────────────────────────
-function KanbanColumn({ column, leads, onUpdate, isOver }: {
+// ─── Kanban column ────────────────────────────────────────────────────────
+function KanbanColumn({ column, leads, onUpdate, onOpen, isOver }: {
   column: typeof COLUMNS[number];
   leads: Lead[];
   onUpdate: (id: number, status: string) => void;
+  onOpen: (id: number) => void;
   isOver: boolean;
 }) {
   const { setNodeRef } = useDroppable({ id: column.id });
@@ -211,7 +646,7 @@ function KanbanColumn({ column, leads, onUpdate, isOver }: {
         }`}
       >
         {leads.map(lead => (
-          <KanbanCard key={lead.id} lead={lead} onUpdate={onUpdate} />
+          <KanbanCard key={lead.id} lead={lead} onUpdate={onUpdate} onOpen={onOpen} />
         ))}
         {leads.length === 0 && (
           <div className={`h-16 rounded border-2 border-dashed flex items-center justify-center transition-colors ${
@@ -225,12 +660,15 @@ function KanbanColumn({ column, leads, onUpdate, isOver }: {
   );
 }
 
-// ─── Kanban board ─────────────────────────────────────────────
-function KanbanBoard({ leads, onUpdate }: { leads: Lead[]; onUpdate: (id: number, status: string) => void }) {
+// ─── Kanban board ─────────────────────────────────────────────────────────
+function KanbanBoard({ leads, onUpdate, onOpen }: {
+  leads: Lead[];
+  onUpdate: (id: number, status: string) => void;
+  onOpen: (id: number) => void;
+}) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-
   const activeLead = activeId ? leads.find(l => String(l.id) === activeId) ?? null : null;
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -261,26 +699,28 @@ function KanbanBoard({ leads, onUpdate }: { leads: Lead[]; onUpdate: (id: number
             column={col}
             leads={leads.filter(l => l.status === col.id)}
             onUpdate={onUpdate}
+            onOpen={onOpen}
             isOver={overId === col.id}
           />
         ))}
       </div>
       <DragOverlay dropAnimation={{ duration: 150, easing: "ease" }}>
         {activeLead && (
-          <KanbanCard lead={activeLead} onUpdate={() => {}} isDraggingOverlay />
+          <KanbanCard lead={activeLead} onUpdate={() => {}} onOpen={() => {}} isDraggingOverlay />
         )}
       </DragOverlay>
     </DndContext>
   );
 }
 
-// ─── Main component ───────────────────────────────────────────
+// ─── Main component ───────────────────────────────────────────────────────
 export default function Leads() {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [filterProduct, setFilterProduct] = useState("");
   const [filterAffiliate, setFilterAffiliate] = useState("");
   const [view, setView] = useState<"kanban" | "list">("kanban");
+  const [openLeadId, setOpenLeadId] = useState<number | null>(null);
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -335,6 +775,12 @@ export default function Leads() {
   const approvedLeads = leads.filter(l => l.status === "approved" || l.status === "won").length;
   const wonLeads = leads.filter(l => l.status === "won").length;
   const newLeads = leads.filter(l => l.status === "new").length;
+  const totalPipeline = leads.reduce((s, l) => s + (l.expectedValue ? Number(l.expectedValue) : 0), 0);
+  const closedValue = leads.filter(l => l.status === "won").reduce((s, l) => s + (l.closedDealValue ? Number(l.closedDealValue) : 0), 0);
+
+  const handleCsvExport = () => {
+    window.open("/api/leads/export", "_blank");
+  };
 
   return (
     <div className="p-6 space-y-4">
@@ -343,22 +789,31 @@ export default function Leads() {
           <h1 className="text-xl font-bold tracking-tight">Leads</h1>
           <p className="text-xs text-muted-foreground mt-0.5">CRM pipeline for offline and API-submitted leads</p>
         </div>
-        <div className="flex items-center gap-1 bg-secondary border border-border rounded p-0.5">
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => setView("kanban")}
-            className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded transition-colors ${view === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            onClick={handleCsvExport}
+            className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-secondary border border-border rounded hover:bg-accent transition-colors"
           >
-            <LayoutGrid className="w-3.5 h-3.5" /> Kanban
+            <Download className="w-3.5 h-3.5" /> Export CSV
           </button>
-          <button
-            onClick={() => setView("list")}
-            className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded transition-colors ${view === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-          >
-            <List className="w-3.5 h-3.5" /> List
-          </button>
+          <div className="flex items-center gap-1 bg-secondary border border-border rounded p-0.5">
+            <button
+              onClick={() => setView("kanban")}
+              className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded transition-colors ${view === "kanban" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" /> Kanban
+            </button>
+            <button
+              onClick={() => setView("list")}
+              className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded transition-colors ${view === "list" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+            >
+              <List className="w-3.5 h-3.5" /> List
+            </button>
+          </div>
         </div>
       </div>
 
+      {/* Stats — row 1: counts */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: "Total Leads", value: totalLeads, icon: Users, color: "text-foreground" },
@@ -380,6 +835,41 @@ export default function Leads() {
         ))}
       </div>
 
+      {/* Stats — row 2: deal values */}
+      {(totalPipeline > 0 || closedValue > 0) && (
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-card border border-border rounded p-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider">Total Pipeline</p>
+                <p className="text-xl font-bold mt-1 tabular-nums text-violet-400">
+                  {fmtDealValue(String(totalPipeline), leads[0]?.currency ?? "NGN") ?? "—"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">expected value</p>
+              </div>
+              <div className="p-2 rounded bg-background text-violet-400">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+            </div>
+          </div>
+          <div className="bg-card border border-border rounded p-4">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider">Closed Revenue</p>
+                <p className="text-xl font-bold mt-1 tabular-nums text-emerald-400">
+                  {fmtDealValue(String(closedValue), leads[0]?.currency ?? "NGN") ?? "—"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">from won leads</p>
+              </div>
+              <div className="p-2 rounded bg-background text-emerald-400">
+                <DollarSign className="w-4 h-4" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative flex-1 min-w-48">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
@@ -436,7 +926,7 @@ export default function Leads() {
           <p className="text-xs text-muted-foreground mt-1">Affiliates submit leads from their portal, or use the public API</p>
         </div>
       ) : view === "kanban" ? (
-        <KanbanBoard leads={leads} onUpdate={handleUpdate} />
+        <KanbanBoard leads={leads} onUpdate={handleUpdate} onOpen={setOpenLeadId} />
       ) : (
         <div className="bg-card border border-border rounded overflow-hidden">
           <table className="w-full text-sm">
@@ -446,13 +936,18 @@ export default function Leads() {
                 <th className="text-left px-4 py-2.5">Contact</th>
                 <th className="text-left px-4 py-2.5">Offer</th>
                 <th className="text-left px-4 py-2.5">Affiliate</th>
+                <th className="text-right px-4 py-2.5">Deal Value</th>
                 <th className="text-left px-4 py-2.5">Status</th>
                 <th className="text-left px-4 py-2.5">Submitted</th>
               </tr>
             </thead>
             <tbody>
               {leads.map(lead => (
-                <tr key={lead.id} className="border-b border-border last:border-0 hover:bg-accent/40 transition-colors">
+                <tr
+                  key={lead.id}
+                  className="border-b border-border last:border-0 hover:bg-accent/40 transition-colors cursor-pointer"
+                  onClick={() => setOpenLeadId(lead.id)}
+                >
                   <td className="px-4 py-3">
                     <p className="text-xs font-semibold">{lead.fullName}</p>
                     {lead.notes && (
@@ -482,8 +977,6 @@ export default function Leads() {
                       </div>
                     ) : lead.offerName ? (
                       <p className="text-xs">{lead.offerName}</p>
-                    ) : lead.productSlug ? (
-                      <p className="text-[10px] font-mono text-muted-foreground">{lead.productSlug}</p>
                     ) : (
                       <span className="text-[10px] text-muted-foreground">—</span>
                     )}
@@ -496,6 +989,22 @@ export default function Leads() {
                       </div>
                     ) : (
                       <p className="text-[10px] font-mono text-muted-foreground">{lead.affiliateCode}</p>
+                    )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {fmtDealValue(lead.closedDealValue ?? lead.expectedValue, lead.currency) ? (
+                      <div>
+                        <p className="text-xs font-semibold text-primary tabular-nums">
+                          {fmtDealValue(lead.closedDealValue ?? lead.expectedValue, lead.currency)}
+                        </p>
+                        {lead.closedDealValue ? (
+                          <p className="text-[9px] text-emerald-400">closed</p>
+                        ) : (
+                          <p className="text-[9px] text-muted-foreground">expected</p>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-muted-foreground">—</span>
                     )}
                   </td>
                   <td className="px-4 py-3">
@@ -512,6 +1021,14 @@ export default function Leads() {
             </tbody>
           </table>
         </div>
+      )}
+
+      {openLeadId && (
+        <LeadDetailDrawer
+          leadId={openLeadId}
+          onClose={() => setOpenLeadId(null)}
+          onSaved={() => qc.invalidateQueries({ queryKey: ["leads"] })}
+        />
       )}
     </div>
   );
