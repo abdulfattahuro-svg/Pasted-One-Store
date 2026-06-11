@@ -501,4 +501,46 @@ router.get("/affiliates/:id/lead-stats", async (req, res) => {
   });
 });
 
+// ─── GET /affiliates/:id/leads/export — CSV for portal ───────────────────
+router.get("/affiliates/:id/leads/export", async (req, res) => {
+  const id = Number(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: "Invalid id" });
+
+  if (req.session.affiliateId && req.session.affiliateId !== id) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  const rows = await db.select().from(leadsTable)
+    .where(eq(leadsTable.affiliateId, id))
+    .orderBy(desc(leadsTable.createdAt));
+
+  const productIds = [...new Set(rows.map(r => r.productId).filter(Boolean) as number[])];
+  const products = productIds.length > 0
+    ? await db.select({ id: productsTable.id, name: productsTable.name }).from(productsTable)
+    : [];
+  const productMap = new Map(products.map(p => [p.id, p.name]));
+
+  const headers = [
+    "ID", "Full Name", "Email", "Phone", "Status", "Offer",
+    "Expected Value", "Closed Deal Value", "Payout Amount", "Currency",
+    "Notes", "Submitted At", "Approved At", "Won At",
+  ];
+
+  const esc = (v: string | null | undefined | number) =>
+    `"${String(v ?? "").replace(/"/g, '""').replace(/\n/g, " ")}"`;
+
+  const csvRows = rows.map(r => [
+    r.id, r.fullName, r.email ?? "", r.phone ?? "", r.status,
+    r.offerName ?? (r.productId ? (productMap.get(r.productId) ?? "") : "") ?? r.productSlug ?? "",
+    r.expectedValue ?? "", r.closedDealValue ?? "", r.payoutAmount ?? "",
+    r.currency, r.notes ?? "",
+    r.createdAt.toISOString(), r.approvedAt?.toISOString() ?? "", r.wonAt?.toISOString() ?? "",
+  ].map(esc).join(","));
+
+  const csv = [headers.map(esc).join(","), ...csvRows].join("\n");
+  res.setHeader("Content-Type", "text/csv");
+  res.setHeader("Content-Disposition", `attachment; filename="my-leads-${Date.now()}.csv"`);
+  return res.send(csv);
+});
+
 export default router;

@@ -635,6 +635,16 @@ function PortalLeadsTab({ affiliate, apps, myLeads, refetchLeads }: {
           <option value="">All Statuses</option>
           {Object.entries(LEAD_STATUS_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
+        {myLeads.length > 0 && (
+          <button
+            onClick={() => window.open(`/api/affiliates/${affiliate.id}/leads/export`, "_blank")}
+            className="flex items-center gap-1.5 text-xs bg-card border border-border text-muted-foreground px-2.5 py-1.5 rounded hover:bg-accent transition-colors flex-shrink-0"
+            title="Export leads as CSV"
+          >
+            <Download className="w-3 h-3" />
+            CSV
+          </button>
+        )}
       </div>
 
       <div className="bg-card border border-border rounded overflow-hidden">
@@ -645,25 +655,49 @@ function PortalLeadsTab({ affiliate, apps, myLeads, refetchLeads }: {
           </div>
         ) : (
           <div className="divide-y divide-border">
-            {filtered.map(lead => (
-              <div key={lead.id} className="px-4 py-3 flex items-start justify-between gap-3">
-                <div className="space-y-0.5 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-xs font-semibold">{lead.fullName}</p>
-                    <LeadStatusBadge status={lead.status} />
+            {filtered.map(lead => {
+              const expectedFmt = fmtDealValue(lead.expectedValue, lead.currency);
+              const closedFmt = fmtDealValue(lead.closedDealValue, lead.currency);
+              const isWon = lead.status === "won";
+              return (
+                <div key={lead.id} className="px-4 py-3 flex items-start justify-between gap-3">
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-xs font-semibold">{lead.fullName}</p>
+                      <LeadStatusBadge status={lead.status} />
+                    </div>
+                    {lead.product && (
+                      <p className="text-[10px] text-muted-foreground">{lead.product.name}</p>
+                    )}
+                    <div className="flex flex-wrap gap-2 mt-1">
+                      {lead.email && <p className="text-[10px] text-muted-foreground">{lead.email}</p>}
+                      {lead.phone && <p className="text-[10px] text-muted-foreground">{lead.phone}</p>}
+                    </div>
+                    {lead.notes && <p className="text-[10px] text-muted-foreground italic truncate max-w-xs">{lead.notes}</p>}
+                    {(closedFmt || expectedFmt) && (
+                      <div className="flex items-center gap-3 mt-1.5">
+                        {closedFmt && (
+                          <span className={`text-[10px] font-semibold ${isWon ? "text-emerald-400" : "text-foreground"}`}>
+                            {isWon ? "Won: " : "Closed: "}{closedFmt}
+                          </span>
+                        )}
+                        {expectedFmt && !closedFmt && (
+                          <span className="text-[10px] text-violet-400 font-medium">
+                            Est. {expectedFmt}
+                          </span>
+                        )}
+                        {expectedFmt && closedFmt && (
+                          <span className="text-[10px] text-muted-foreground">
+                            (est. {expectedFmt})
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  {lead.product && (
-                    <p className="text-[10px] text-muted-foreground">{lead.product.name}</p>
-                  )}
-                  <div className="flex flex-wrap gap-2 mt-1">
-                    {lead.email && <p className="text-[10px] text-muted-foreground">{lead.email}</p>}
-                    {lead.phone && <p className="text-[10px] text-muted-foreground">{lead.phone}</p>}
-                  </div>
-                  {lead.notes && <p className="text-[10px] text-muted-foreground italic truncate max-w-xs">{lead.notes}</p>}
+                  <p className="text-[10px] text-muted-foreground flex-shrink-0 text-right">{new Date(lead.createdAt).toLocaleDateString()}</p>
                 </div>
-                <p className="text-[10px] text-muted-foreground flex-shrink-0 text-right">{new Date(lead.createdAt).toLocaleDateString()}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
