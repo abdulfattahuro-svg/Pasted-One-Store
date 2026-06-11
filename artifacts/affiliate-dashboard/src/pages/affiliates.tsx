@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Plus, Search, UserCheck, UserX, Clock, CheckCircle, XCircle, Bell, ChevronDown, ChevronUp, Trash2 } from "lucide-react";
+import { Plus, Search, UserCheck, UserX, Clock, CheckCircle, XCircle, Bell, ChevronDown, ChevronUp, Trash2, Download } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Form, FormField, FormItem, FormLabel, FormControl, FormMessage } from "@/components/ui/form";
@@ -223,6 +223,23 @@ export default function Affiliates() {
     });
   };
 
+  const exportCSV = () => {
+    if (!affiliates?.length) return;
+    const esc = (v: string | number | null | undefined) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const headers = ["ID", "Name", "Email", "Ref Code", "Status", "Signup Status", "Self Signup", "Joined"];
+    const rows = affiliates.map(a => [
+      a.id, a.name, a.email, a.refCode, a.status,
+      a.signupStatus ?? "", a.isSelfSignup ? "Yes" : "No",
+      new Date(a.createdAt).toLocaleDateString(),
+    ].map(esc).join(","));
+    const csv = [headers.map(esc).join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `affiliates-${Date.now()}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
@@ -230,14 +247,23 @@ export default function Affiliates() {
           <h1 className="text-xl font-bold tracking-tight">Affiliates</h1>
           <p className="text-xs text-muted-foreground mt-0.5">{affiliates?.length ?? 0} total in network</p>
         </div>
-        <button
-          data-testid="button-create-affiliate"
-          onClick={() => setOpen(true)}
-          className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-primary text-primary-foreground rounded font-semibold hover:opacity-90 transition-opacity"
-        >
-          <Plus className="w-3 h-3" />
-          New Affiliate
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportCSV}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-secondary border border-border rounded hover:bg-accent transition-colors"
+          >
+            <Download className="w-3 h-3" />
+            Export CSV
+          </button>
+          <button
+            data-testid="button-create-affiliate"
+            onClick={() => setOpen(true)}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-primary text-primary-foreground rounded font-semibold hover:opacity-90 transition-opacity"
+          >
+            <Plus className="w-3 h-3" />
+            New Affiliate
+          </button>
+        </div>
       </div>
 
       {/* Pending approval panel */}

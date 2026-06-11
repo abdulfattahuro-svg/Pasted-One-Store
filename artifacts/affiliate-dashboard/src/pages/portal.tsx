@@ -6,7 +6,7 @@ import {
   ArrowRightLeft, Wallet, Eye, EyeOff, AppWindow, Share2,
   MessageCircle, Facebook, Mail, ChevronDown, ChevronUp, Video,
   Sparkles, DollarSign, Users, Zap, Star, X, Send, XCircle,
-  QrCode, MousePointerClick, ShoppingCart, BarChart2, Trophy, Search
+  QrCode, MousePointerClick, ShoppingCart, BarChart2, Trophy, Search, Download
 } from "lucide-react";
 import QRCode from "qrcode";
 
@@ -426,6 +426,227 @@ function fmtDealValue(value: string | null | undefined, currency = "NGN"): strin
   }
 }
 
+type LeadDetailData = {
+  id: number;
+  fullName: string;
+  phone: string | null;
+  email: string | null;
+  notes: string | null;
+  status: string;
+  expectedValue: string | null;
+  closedDealValue: string | null;
+  payoutAmount: string | null;
+  currency: string;
+  approvedBy: string | null;
+  rejectedReason: string | null;
+  approvedAt: string | null;
+  wonAt: string | null;
+  lostAt: string | null;
+  createdAt: string;
+  product: { id: number; name: string; slug: string } | null;
+  history: Array<{
+    id: number;
+    previousStatus: string | null;
+    newStatus: string;
+    changedBy: string | null;
+    notes: string | null;
+    createdAt: string;
+  }>;
+  commissions: Array<{
+    id: number;
+    paymentId: string;
+    conversionType: string;
+    commission: number;
+    amount: number;
+    status: string;
+    conversionDate: string;
+  }>;
+};
+
+const COMMISSION_TYPE_LABELS: Record<string, string> = {
+  lead_submitted: "Submitted",
+  lead_approved: "Approved",
+  deal_won: "Deal Won",
+};
+
+function LeadDetailDrawer({ leadId, onClose }: { leadId: number; onClose: () => void }) {
+  const { data: lead, isLoading } = useQuery<LeadDetailData>({
+    queryKey: ["portal-lead-detail", leadId],
+    queryFn: () => apiGet(`/leads/${leadId}`),
+  });
+
+  return (
+    <>
+      <div className="fixed inset-0 bg-black/60 z-40" onClick={onClose} />
+      <div className="fixed inset-y-0 right-0 z-50 w-full max-w-md bg-background border-l border-border shadow-2xl flex flex-col">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border flex-shrink-0">
+          <div className="min-w-0 flex items-center gap-2 flex-wrap">
+            {isLoading ? (
+              <div className="h-4 w-32 bg-muted rounded animate-pulse" />
+            ) : lead ? (
+              <>
+                <p className="text-sm font-semibold">{lead.fullName}</p>
+                <LeadStatusBadge status={lead.status} />
+              </>
+            ) : null}
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded hover:bg-accent transition-colors flex-shrink-0 ml-3">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {isLoading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-xs text-muted-foreground animate-pulse">Loading…</p>
+          </div>
+        ) : lead ? (
+          <div className="flex-1 overflow-y-auto divide-y divide-border">
+            {/* Contact info */}
+            <section className="px-5 py-4 space-y-2">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Contact</p>
+              <div className="space-y-1.5">
+                {lead.email && (
+                  <p className="text-xs flex gap-3">
+                    <span className="text-muted-foreground w-16 flex-shrink-0">Email</span>
+                    <span>{lead.email}</span>
+                  </p>
+                )}
+                {lead.phone && (
+                  <p className="text-xs flex gap-3">
+                    <span className="text-muted-foreground w-16 flex-shrink-0">Phone</span>
+                    <span>{lead.phone}</span>
+                  </p>
+                )}
+                {lead.product && (
+                  <p className="text-xs flex gap-3">
+                    <span className="text-muted-foreground w-16 flex-shrink-0">Offer</span>
+                    <span>{lead.product.name}</span>
+                  </p>
+                )}
+                <p className="text-xs flex gap-3">
+                  <span className="text-muted-foreground w-16 flex-shrink-0">Submitted</span>
+                  <span>{new Date(lead.createdAt).toLocaleDateString()}</span>
+                </p>
+                {lead.approvedAt && (
+                  <p className="text-xs flex gap-3">
+                    <span className="text-muted-foreground w-16 flex-shrink-0">Approved</span>
+                    <span>{new Date(lead.approvedAt).toLocaleDateString()}</span>
+                  </p>
+                )}
+                {lead.wonAt && (
+                  <p className="text-xs flex gap-3">
+                    <span className="text-muted-foreground w-16 flex-shrink-0">Won</span>
+                    <span className="text-emerald-400 font-medium">{new Date(lead.wonAt).toLocaleDateString()}</span>
+                  </p>
+                )}
+              </div>
+            </section>
+
+            {/* Deal values */}
+            {(lead.expectedValue && Number(lead.expectedValue) > 0) ||
+             (lead.closedDealValue && Number(lead.closedDealValue) > 0) ||
+             (lead.payoutAmount && Number(lead.payoutAmount) > 0) ? (
+              <section className="px-5 py-4 space-y-2">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Deal Values</p>
+                <div className="grid grid-cols-3 gap-3">
+                  {lead.expectedValue && Number(lead.expectedValue) > 0 && (
+                    <div className="bg-card border border-border rounded p-2.5">
+                      <p className="text-[10px] text-muted-foreground">Expected</p>
+                      <p className="text-sm font-bold text-violet-400 mt-0.5">{fmtDealValue(lead.expectedValue, lead.currency)}</p>
+                    </div>
+                  )}
+                  {lead.closedDealValue && Number(lead.closedDealValue) > 0 && (
+                    <div className="bg-card border border-border rounded p-2.5">
+                      <p className="text-[10px] text-muted-foreground">Closed</p>
+                      <p className="text-sm font-bold text-emerald-400 mt-0.5">{fmtDealValue(lead.closedDealValue, lead.currency)}</p>
+                    </div>
+                  )}
+                  {lead.payoutAmount && Number(lead.payoutAmount) > 0 && (
+                    <div className="bg-card border border-border rounded p-2.5">
+                      <p className="text-[10px] text-muted-foreground">Your Payout</p>
+                      <p className="text-sm font-bold text-primary mt-0.5">{fmtDealValue(lead.payoutAmount, lead.currency)}</p>
+                    </div>
+                  )}
+                </div>
+              </section>
+            ) : null}
+
+            {/* Notes */}
+            {lead.notes && (
+              <section className="px-5 py-4 space-y-2">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Notes</p>
+                <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">{lead.notes}</p>
+              </section>
+            )}
+
+            {/* Rejection reason */}
+            {lead.rejectedReason && (
+              <section className="px-5 py-4 space-y-2">
+                <p className="text-[10px] uppercase tracking-wider text-rose-400 font-semibold">Rejection Reason</p>
+                <p className="text-xs text-rose-300 leading-relaxed">{lead.rejectedReason}</p>
+              </section>
+            )}
+
+            {/* Timeline */}
+            {lead.history.length > 0 && (
+              <section className="px-5 py-4 space-y-3">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Timeline</p>
+                <div className="relative pl-6">
+                  <div className="absolute left-2 top-1 bottom-1 w-px bg-border" />
+                  <div className="space-y-4">
+                    {[...lead.history].reverse().map((h, i, arr) => {
+                      const meta = LEAD_STATUS_META[h.newStatus] ?? { label: h.newStatus, color: "bg-secondary text-muted-foreground border-border" };
+                      const isLatest = i === arr.length - 1;
+                      return (
+                        <div key={h.id} className="relative">
+                          <div className={`absolute -left-6 top-1 w-2.5 h-2.5 rounded-full border-2 border-background ${isLatest ? "bg-primary" : "bg-muted-foreground/40"}`} />
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border uppercase tracking-wider ${meta.color}`}>{meta.label}</span>
+                              <span className="text-[10px] text-muted-foreground">{new Date(h.createdAt).toLocaleDateString()}</span>
+                              {h.changedBy && <span className="text-[10px] text-muted-foreground">· {h.changedBy}</span>}
+                            </div>
+                            {h.notes && <p className="text-[10px] text-muted-foreground italic">{h.notes}</p>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* Commission events */}
+            {lead.commissions.length > 0 && (
+              <section className="px-5 py-4 space-y-2">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Commission Events</p>
+                <div className="space-y-2">
+                  {lead.commissions.map(c => (
+                    <div key={c.id} className="flex items-center justify-between bg-card border border-border rounded px-3 py-2">
+                      <div>
+                        <p className="text-xs font-medium">{COMMISSION_TYPE_LABELS[c.conversionType] ?? c.conversionType}</p>
+                        <p className="text-[10px] text-muted-foreground">{new Date(c.conversionDate).toLocaleDateString()}</p>
+                      </div>
+                      <div className="text-right space-y-0.5">
+                        <p className="text-xs font-semibold text-primary">{fmtDealValue(String(c.commission), lead.currency) ?? `${lead.currency} ${c.commission}`}</p>
+                        <StatusBadge status={c.status} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        ) : (
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-xs text-muted-foreground">Lead not found</p>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 function PortalLeadsTab({ affiliate, apps, myLeads, refetchLeads }: {
   affiliate: Affiliate;
   apps: App[];
@@ -437,6 +658,7 @@ function PortalLeadsTab({ affiliate, apps, myLeads, refetchLeads }: {
   const [search, setSearch] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
+  const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null);
 
   const { data: leadStats } = useQuery<LeadStats>({
     queryKey: ["portal-lead-stats", affiliate.id],
@@ -647,6 +869,10 @@ function PortalLeadsTab({ affiliate, apps, myLeads, refetchLeads }: {
         )}
       </div>
 
+      {selectedLeadId !== null && (
+        <LeadDetailDrawer leadId={selectedLeadId} onClose={() => setSelectedLeadId(null)} />
+      )}
+
       <div className="bg-card border border-border rounded overflow-hidden">
         {!filtered.length ? (
           <div className="py-12 text-center">
@@ -660,7 +886,7 @@ function PortalLeadsTab({ affiliate, apps, myLeads, refetchLeads }: {
               const closedFmt = fmtDealValue(lead.closedDealValue, lead.currency);
               const isWon = lead.status === "won";
               return (
-                <div key={lead.id} className="px-4 py-3 flex items-start justify-between gap-3">
+                <div key={lead.id} className="px-4 py-3 flex items-start justify-between gap-3 cursor-pointer hover:bg-accent/40 transition-colors" onClick={() => setSelectedLeadId(lead.id)}>
                   <div className="space-y-0.5 min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <p className="text-xs font-semibold">{lead.fullName}</p>

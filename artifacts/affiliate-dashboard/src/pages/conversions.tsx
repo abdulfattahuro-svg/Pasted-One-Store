@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useListConversions } from "@workspace/api-client-react";
-import { Clock, Filter } from "lucide-react";
+import { Clock, Filter, Download } from "lucide-react";
 
 type Offer = { id: number; name: string; slug: string };
 
@@ -20,6 +20,24 @@ const STATUSES = ["HOLD", "PAYABLE", "PAID"];
 export default function Conversions() {
   const [status, setStatus] = useState<string>("");
   const [appName, setAppName] = useState<string>("");
+
+  const exportCSV = (conversions: ReturnType<typeof useListConversions>["data"]) => {
+    if (!conversions?.length) return;
+    const esc = (v: string | number | null | undefined) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const headers = ["ID", "Payment ID", "Offer", "User", "Amount", "Commission", "Status", "Hold Until", "Date"];
+    const rows = conversions.map(c => [
+      c.id, c.paymentId, c.appName, c.userId ?? "",
+      c.amount, c.commission, c.status,
+      c.holdEndDate ? new Date(c.holdEndDate).toLocaleDateString() : "",
+      new Date(c.conversionDate).toLocaleDateString(),
+    ].map(esc).join(","));
+    const csv = [headers.map(esc).join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `conversions-${Date.now()}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
 
   const { data: offers = [] } = useQuery<Offer[]>({
     queryKey: ["offers-list"],
@@ -47,6 +65,7 @@ export default function Conversions() {
         </div>
         <div className="flex items-center gap-2">
           <Filter className="w-3.5 h-3.5 text-muted-foreground" />
+
           <select
             data-testid="select-status"
             value={status}
@@ -69,6 +88,14 @@ export default function Conversions() {
               offers.map(o => <option key={o.slug} value={o.slug}>{o.name}</option>)
             )}
           </select>
+          <button
+            data-testid="button-export-csv"
+            onClick={() => exportCSV(conversions)}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-secondary border border-border rounded hover:bg-accent transition-colors"
+          >
+            <Download className="w-3 h-3" />
+            Export CSV
+          </button>
         </div>
       </div>
 
