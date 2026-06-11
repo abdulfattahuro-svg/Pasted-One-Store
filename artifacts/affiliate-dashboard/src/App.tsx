@@ -47,6 +47,7 @@ function Router() {
             <Route path="/affiliates" component={Affiliates} />
             <Route path="/apps" component={Apps} />
             <Route path="/products" component={Products} />
+            <Route path="/offers" component={Products} />
             <Route path="/leads" component={Leads} />
             <Route path="/conversions" component={Conversions} />
             <Route path="/payouts" component={Payouts} />

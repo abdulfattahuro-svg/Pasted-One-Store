@@ -12,6 +12,7 @@ import productsRouter from "./products";
 import trackingRouter from "./tracking";
 import emailTemplatesRouter, { seedEmailTemplates } from "./email_templates";
 import leadsRouter from "./leads";
+import publicRouter from "./public";
 
 const router: IRouter = Router();
 
@@ -28,6 +29,7 @@ router.use(productsRouter);
 router.use(trackingRouter);
 router.use(emailTemplatesRouter);
 router.use(leadsRouter);
+router.use(publicRouter);
 
 seedEmailTemplates().catch(() => {});
 

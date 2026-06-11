@@ -1,6 +1,8 @@
 import { Router } from "express";
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
+import crypto from "crypto";
 import { db, productsTable, productAssetsTable } from "@workspace/db";
+import { offerApiKeysTable } from "@workspace/db";
 
 const router = Router();
 
@@ -180,6 +182,100 @@ router.delete("/products/:id/assets/:assetId", async (req, res) => {
   if (isNaN(assetId)) return res.status(400).json({ error: "Invalid assetId" });
   await db.delete(productAssetsTable).where(eq(productAssetsTable.id, assetId));
   return res.json({ ok: true });
+});
+
+const VALID_ENVS = ["production", "staging", "development"] as const;
+
+function generateApiKey(): string {
+  return "sk_" + crypto.randomBytes(32).toString("hex");
+}
+
+function maskApiKey(key: string): string {
+  if (key.length <= 10) return "****";
+  return key.slice(0, 10) + "..." + key.slice(-4);
+}
+
+function formatApiKey(row: typeof offerApiKeysTable.$inferSelect, showFull = false) {
+  return {
+    ...row,
+    apiKey: showFull ? row.apiKey : maskApiKey(row.apiKey),
+    createdAt: row.createdAt.toISOString(),
+    lastUsedAt: row.lastUsedAt?.toISOString() ?? null,
+  };
+}
+
+router.get("/products/:id/api-keys", async (req, res) => {
+  const productId = Number(req.params.id);
+  if (isNaN(productId)) return res.status(400).json({ error: "Invalid id" });
+  const rows = await db
+    .select()
+    .from(offerApiKeysTable)
+    .where(eq(offerApiKeysTable.offerId, productId))
+    .orderBy(desc(offerApiKeysTable.createdAt));
+  return res.json(rows.map(r => formatApiKey(r)));
+});
+
+router.post("/products/:id/api-keys", async (req, res) => {
+  const productId = Number(req.params.id);
+  if (isNaN(productId)) return res.status(400).json({ error: "Invalid id" });
+
+  const { name, environment } = req.body as { name?: string; environment?: string };
+  if (!name?.trim()) return res.status(400).json({ error: "name is required" });
+
+  const env = (environment ?? "production") as typeof VALID_ENVS[number];
+  if (!VALID_ENVS.includes(env)) {
+    return res.status(400).json({ error: `Invalid environment. Must be: ${VALID_ENVS.join(", ")}` });
+  }
+
+  const [product] = await db.select({ id: productsTable.id }).from(productsTable).where(eq(productsTable.id, productId));
+  if (!product) return res.status(404).json({ error: "Offer not found" });
+
+  const rawKey = generateApiKey();
+  const [row] = await db.insert(offerApiKeysTable).values({
+    offerId: productId,
+    name: name.trim(),
+    apiKey: rawKey,
+    environment: env,
+    status: "active",
+  }).returning();
+
+  return res.status(201).json(formatApiKey(row, true));
+});
+
+router.patch("/products/:id/api-keys/:keyId", async (req, res) => {
+  const keyId = Number(req.params.keyId);
+  if (isNaN(keyId)) return res.status(400).json({ error: "Invalid keyId" });
+
+  const { status, name } = req.body as { status?: string; name?: string };
+  const updates: Partial<typeof offerApiKeysTable.$inferInsert> = {};
+  if (status !== undefined) {
+    if (!["active", "disabled"].includes(status)) {
+      return res.status(400).json({ error: "status must be 'active' or 'disabled'" });
+    }
+    updates.status = status;
+  }
+  if (name !== undefined) updates.name = name.trim();
+
+  const [row] = await db.update(offerApiKeysTable).set(updates).where(eq(offerApiKeysTable.id, keyId)).returning();
+  if (!row) return res.status(404).json({ error: "API key not found" });
+  return res.json(formatApiKey(row));
+});
+
+router.delete("/products/:id/api-keys/:keyId", async (req, res) => {
+  const keyId = Number(req.params.keyId);
+  if (isNaN(keyId)) return res.status(400).json({ error: "Invalid keyId" });
+  await db.delete(offerApiKeysTable).where(eq(offerApiKeysTable.id, keyId));
+  return res.json({ ok: true });
+});
+
+router.post("/products/:id/api-keys/:keyId/regenerate", async (req, res) => {
+  const keyId = Number(req.params.keyId);
+  if (isNaN(keyId)) return res.status(400).json({ error: "Invalid keyId" });
+
+  const rawKey = generateApiKey();
+  const [row] = await db.update(offerApiKeysTable).set({ apiKey: rawKey }).where(eq(offerApiKeysTable.id, keyId)).returning();
+  if (!row) return res.status(404).json({ error: "API key not found" });
+  return res.json(formatApiKey(row, true));
 });
 
 export default router;

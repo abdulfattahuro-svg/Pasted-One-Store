@@ -1,0 +1,244 @@
+PRE-PHASE 2 FOUNDATION UPDATE: API KEYS + OFFERS TERMINOLOGY CLEANUP
+
+Analyze the existing codebase before making changes.
+
+The platform currently supports:
+
+* Products & Offers
+* Affiliates
+* Product-specific referral links
+* Product attribution
+* Product analytics
+* QR codes
+* Conversions
+* Commissions
+
+Before moving to Leads and Offline Conversions, we need to strengthen the API architecture and standardize terminology.
+
+==================================================
+PART 1 — API KEY ARCHITECTURE
+=============================
+
+GOAL
+
+Support unlimited offers and future integrations without creating separate APIs for every offer.
+
+Use a single universal API system with offer-specific API keys.
+
+DO NOT create separate endpoints per offer.
+
+==================================================
+DATABASE
+========
+
+Create table:
+
+offer_api_keys
+
+Fields:
+
+* id
+* offerId
+* name
+* apiKey
+* environment
+* status
+* lastUsedAt
+* createdAt
+
+Environment values:
+
+* production
+* staging
+* development
+
+Status values:
+
+* active
+* disabled
+
+Requirements:
+
+* One offer can have multiple API keys.
+* API keys must be unique.
+* API keys should be securely generated.
+* Store hashes if appropriate.
+
+==================================================
+API ENDPOINTS
+=============
+
+Prepare universal endpoints:
+
+POST /api/public/events
+POST /api/public/conversions
+POST /api/public/leads
+
+Do not fully implement lead processing yet.
+
+For now:
+
+* Validate API key
+* Resolve Offer
+* Return success response
+
+Architecture must support future expansion.
+
+==================================================
+OFFER SETTINGS
+==============
+
+Add API Keys section inside Offer Management.
+
+Admin can:
+
+* Create API Key
+* Disable API Key
+* View last used date
+* Regenerate API Key
+
+==================================================
+PART 2 — TERMINOLOGY CLEANUP
+============================
+
+The platform should consistently use:
+
+"Offers"
+
+instead of
+
+"Products"
+
+for user-facing interfaces.
+
+==================================================
+UI LABEL CHANGES
+================
+
+Rename everywhere in UI:
+
+Products → Offers
+
+Add Product → Add Offer
+
+Edit Product → Edit Offer
+
+Save Product → Save Offer
+
+Create Product → Create Offer
+
+Product Details → Offer Details
+
+Product Assets → Offer Assets
+
+Product Analytics → Offer Analytics
+
+Product Category → Offer Category
+
+Active Products → Active Offers
+
+Top Products → Top Offers
+
+Products Page → Offers Page
+
+Products Tab → Offers Tab
+
+==================================================
+IMPORTANT
+=========
+
+Database table names and internal code names may remain unchanged if necessary to avoid breaking existing functionality.
+
+Focus on changing user-facing labels first.
+
+==================================================
+PART 3 — CONVERSION FILTER CLEANUP
+==================================
+
+Currently there appear to be default/hardcoded offer names such as:
+
+* OneTailor
+* OneSalon
+* OneSolar
+
+These should not appear automatically.
+
+Requirements:
+
+1. Remove all hardcoded offer filters.
+
+2. Conversion filters must be populated dynamically from existing offers in the database.
+
+3. If no offers exist:
+
+Show:
+
+"No offers available"
+
+instead of hardcoded values.
+
+4. When an offer is created:
+
+It should automatically become available in:
+
+* Conversion filters
+* Dashboard filters
+* Reports
+* Analytics
+
+5. Filtering should use the actual offer name set by the user.
+
+Example:
+
+User creates:
+
+"Lagos Solar Package"
+
+Conversion filters show:
+
+Lagos Solar Package
+
+User creates:
+
+"Premium Tailor System"
+
+Conversion filters show:
+
+Premium Tailor System
+
+No system-generated demo names should appear.
+
+==================================================
+PART 4 — OFFER IDENTIFICATION STANDARD
+======================================
+
+Every tracked item should consistently store:
+
+* offerId
+* offerSlug
+* offerName
+
+This prepares the system for:
+
+* APIs
+* Webhooks
+* Leads
+* Offline Conversions
+* Multi-Business
+* SaaS
+
+==================================================
+DELIVERABLES
+============
+
+After implementation provide:
+
+1. Database changes
+2. New API key architecture
+3. New endpoints added
+4. UI terminology updates
+5. Hardcoded offer references removed
+6. Remaining technical debt
+7. Recommendations before Phase 2A (Offline Leads Foundation)
+
+Maintain backward compatibility with all existing tracking, conversions, commissions, payouts, referral links, and analytics.

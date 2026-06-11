@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  Plus, Pencil, Trash2, Globe, Image, Video, ChevronDown, ChevronUp,
-  ToggleLeft, ToggleRight, Package, ExternalLink, FileText, Tag, Zap, X, Trophy,
+  Plus, Pencil, Trash2, Globe, Video, ChevronDown, ChevronUp,
+  ToggleLeft, ToggleRight, Package, ExternalLink, Tag, Zap, X, Trophy,
+  Key, RefreshCw, Eye, EyeOff, Copy, CheckCircle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -100,7 +101,7 @@ function ProductForm({ initial, onSave, onCancel, isSaving }: {
     <form onSubmit={e => { e.preventDefault(); if (!form.name || !form.slug || !form.websiteUrl) return; onSave(form); }} className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Product Name *</label>
+          <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Offer Name *</label>
           <input value={form.name} onChange={e => { set("name", e.target.value); if (!initial?.id) set("slug", autoSlug(e.target.value)); }}
             className="w-full bg-background border border-border rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-primary/50" placeholder="My Course" required />
         </div>
@@ -216,14 +217,14 @@ function ProductForm({ initial, onSave, onCancel, isSaving }: {
       {form.excludeFromLeaderboard && (
         <div className="flex items-start gap-2 bg-amber-500/5 border border-amber-500/20 rounded p-2.5 -mt-2">
           <Trophy className="w-3 h-3 text-amber-400 flex-shrink-0 mt-0.5" />
-          <p className="text-[10px] text-amber-400">This product's clicks and conversions will not count toward affiliate rankings.</p>
+          <p className="text-[10px] text-amber-400">This offer's clicks and conversions will not count toward affiliate rankings.</p>
         </div>
       )}
 
       <div className="flex justify-end gap-2">
         <button type="button" onClick={onCancel} className="text-xs px-3 py-1.5 rounded border border-border text-muted-foreground hover:bg-accent transition-colors">Cancel</button>
         <button type="submit" disabled={isSaving} className="text-xs px-3 py-1.5 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors font-medium">
-          {isSaving ? "Saving..." : "Save Product"}
+          {isSaving ? "Saving..." : "Save Offer"}
         </button>
       </div>
     </form>
@@ -312,6 +313,182 @@ function AssetManager({ productId }: { productId: number }) {
   );
 }
 
+type ApiKey = {
+  id: number; offerId: number; name: string; apiKey: string;
+  environment: string; status: string; lastUsedAt: string | null; createdAt: string;
+};
+
+const ENV_COLORS: Record<string, string> = {
+  production: "bg-primary/10 text-primary border-primary/20",
+  staging: "bg-amber-500/10 text-amber-400 border-amber-500/20",
+  development: "bg-violet-500/10 text-violet-400 border-violet-500/20",
+};
+
+function ApiKeyManager({ productId }: { productId: number }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const [showCreate, setShowCreate] = useState(false);
+  const [newKeyForm, setNewKeyForm] = useState({ name: "", environment: "production" });
+  const [revealedKey, setRevealedKey] = useState<{ id: number; key: string } | null>(null);
+  const [copiedId, setCopiedId] = useState<number | null>(null);
+
+  const { data: apiKeys = [] } = useQuery<ApiKey[]>({
+    queryKey: ["api-keys", productId],
+    queryFn: () => apiFetch(`/products/${productId}/api-keys`),
+  });
+
+  const createKey = useMutation({
+    mutationFn: () => apiFetch(`/products/${productId}/api-keys`, {
+      method: "POST",
+      body: JSON.stringify(newKeyForm),
+    }),
+    onSuccess: (data: ApiKey) => {
+      qc.invalidateQueries({ queryKey: ["api-keys", productId] });
+      setRevealedKey({ id: data.id, key: data.apiKey });
+      setShowCreate(false);
+      setNewKeyForm({ name: "", environment: "production" });
+      toast({ title: "API key created", description: "Copy it now — it won't be shown again." });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const toggleStatus = useMutation({
+    mutationFn: ({ id, status }: { id: number; status: string }) =>
+      apiFetch(`/products/${productId}/api-keys/${id}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["api-keys", productId] }),
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteKey = useMutation({
+    mutationFn: (id: number) => apiFetch(`/products/${productId}/api-keys/${id}`, { method: "DELETE" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["api-keys", productId] });
+      toast({ title: "API key deleted" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const regenerate = useMutation({
+    mutationFn: (id: number) => apiFetch(`/products/${productId}/api-keys/${id}/regenerate`, { method: "POST" }),
+    onSuccess: (data: ApiKey) => {
+      qc.invalidateQueries({ queryKey: ["api-keys", productId] });
+      setRevealedKey({ id: data.id, key: data.apiKey });
+      toast({ title: "API key regenerated", description: "Copy the new key — it won't be shown again." });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const copyToClipboard = (text: string, id: number) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    });
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+          <Key className="w-3 h-3" /> API Keys ({apiKeys.length})
+        </p>
+        <button onClick={() => setShowCreate(s => !s)}
+          className="flex items-center gap-1 text-[10px] px-2 py-1 rounded bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors">
+          <Plus className="w-3 h-3" /> New Key
+        </button>
+      </div>
+
+      {showCreate && (
+        <div className="bg-background border border-border rounded-lg p-3 space-y-2">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[10px] text-muted-foreground block mb-1">Key Name *</label>
+              <input value={newKeyForm.name} onChange={e => setNewKeyForm(f => ({ ...f, name: e.target.value }))}
+                className="w-full bg-card border border-border rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
+                placeholder="e.g. Production App" />
+            </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground block mb-1">Environment</label>
+              <select value={newKeyForm.environment} onChange={e => setNewKeyForm(f => ({ ...f, environment: e.target.value }))}
+                className="w-full bg-card border border-border rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary/50">
+                <option value="production">Production</option>
+                <option value="staging">Staging</option>
+                <option value="development">Development</option>
+              </select>
+            </div>
+          </div>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setShowCreate(false)} className="text-xs px-2 py-1 rounded border border-border text-muted-foreground hover:bg-accent transition-colors">Cancel</button>
+            <button onClick={() => createKey.mutate()} disabled={!newKeyForm.name.trim() || createKey.isPending}
+              className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50 transition-colors">
+              {createKey.isPending ? "Creating..." : "Create"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {revealedKey && (
+        <div className="bg-primary/5 border border-primary/20 rounded-lg p-3 space-y-1.5">
+          <p className="text-[10px] text-primary font-semibold uppercase tracking-wider">Copy your key now — it won't be shown again</p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 text-[10px] font-mono bg-background border border-border rounded px-2 py-1.5 break-all">{revealedKey.key}</code>
+            <button onClick={() => copyToClipboard(revealedKey.key, revealedKey.id)}
+              className="flex-shrink-0 p-1.5 rounded border border-border text-muted-foreground hover:text-primary transition-colors">
+              {copiedId === revealedKey.id ? <CheckCircle className="w-3.5 h-3.5 text-primary" /> : <Copy className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+          <button onClick={() => setRevealedKey(null)} className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">Dismiss</button>
+        </div>
+      )}
+
+      {apiKeys.length > 0 && (
+        <div className="space-y-1">
+          {apiKeys.map(key => (
+            <div key={key.id} className="flex items-center gap-2 bg-background border border-border rounded px-3 py-2">
+              <Key className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs font-medium truncate">{key.name}</span>
+                  <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${ENV_COLORS[key.environment] ?? "bg-secondary text-muted-foreground border-border"}`}>
+                    {key.environment}
+                  </span>
+                  {key.status === "disabled" && (
+                    <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded border bg-destructive/10 text-destructive border-destructive/20">disabled</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <code className="text-[9px] font-mono text-muted-foreground">{key.apiKey}</code>
+                  {key.lastUsedAt && (
+                    <span className="text-[9px] text-muted-foreground">· last used {new Date(key.lastUsedAt).toLocaleDateString()}</span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-0.5 flex-shrink-0">
+                <button onClick={() => regenerate.mutate(key.id)} disabled={regenerate.isPending}
+                  title="Regenerate key" className="p-1.5 rounded hover:bg-accent transition-colors text-muted-foreground hover:text-foreground">
+                  <RefreshCw className="w-3 h-3" />
+                </button>
+                <button onClick={() => toggleStatus.mutate({ id: key.id, status: key.status === "active" ? "disabled" : "active" })}
+                  title={key.status === "active" ? "Disable key" : "Enable key"}
+                  className={`p-1.5 rounded hover:bg-accent transition-colors ${key.status === "active" ? "text-primary" : "text-muted-foreground"}`}>
+                  {key.status === "active" ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+                </button>
+                <button onClick={() => deleteKey.mutate(key.id)}
+                  className="p-1.5 rounded hover:bg-accent transition-colors text-muted-foreground hover:text-destructive">
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {apiKeys.length === 0 && !showCreate && (
+        <p className="text-[10px] text-muted-foreground py-1">No API keys yet. Create one to enable programmatic access to this offer.</p>
+      )}
+    </div>
+  );
+}
+
 function commissionSummary(product: Product) {
   if (!product.commissionType) return "Global default";
   const type = COMMISSION_TYPES.find(c => c.value === product.commissionType)?.label ?? product.commissionType;
@@ -383,14 +560,14 @@ export default function Products() {
     <div className="p-6 space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">Products & Offers</h1>
+          <h1 className="text-xl font-bold tracking-tight">Offers</h1>
           <p className="text-xs text-muted-foreground mt-0.5">Manage everything affiliates can promote</p>
         </div>
         <button
           onClick={() => { setShowCreate(true); setEditId(null); }}
           className="flex items-center gap-1.5 text-xs px-3 py-2 rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium"
         >
-          <Plus className="w-3.5 h-3.5" /> Add Product
+          <Plus className="w-3.5 h-3.5" /> Add Offer
         </button>
       </div>
 
@@ -410,7 +587,7 @@ export default function Products() {
       {/* Create form */}
       {showCreate && (
         <div className="bg-card border border-primary/20 rounded-lg p-5">
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">New Product</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">New Offer</h2>
           <ProductForm onSave={d => createProduct.mutate(d)} onCancel={() => setShowCreate(false)} isSaving={createProduct.isPending} />
         </div>
       )}
@@ -421,7 +598,7 @@ export default function Products() {
       ) : !filtered.length ? (
         <div className="text-center py-16 text-muted-foreground">
           <Package className="w-8 h-8 mx-auto mb-3 opacity-30" />
-          <p className="text-sm">{products?.length ? "No products match this filter." : "No products yet. Add your first product above."}</p>
+          <p className="text-sm">{products?.length ? "No offers match this filter." : "No offers yet. Add your first offer above."}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -431,7 +608,7 @@ export default function Products() {
               <div key={product.id} className="bg-card border border-border rounded-lg overflow-hidden">
                 {editId === product.id ? (
                   <div className="p-5">
-                    <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">Edit Product</h2>
+                    <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4">Edit Offer</h2>
                     <ProductForm
                       initial={{ ...product, imageUrls: product.imageUrls.join("\n") as unknown as string }}
                       onSave={d => updateProduct.mutate({ id: product.id, data: d })}
@@ -517,6 +694,7 @@ export default function Products() {
                           </div>
                         )}
                         <AssetManager productId={product.id} />
+                        <ApiKeyManager productId={product.id} />
                       </div>
                     )}
                   </>

@@ -9,3 +9,4 @@ export * from "./password_reset_tokens";
 export * from "./onboarding";
 export * from "./email_templates";
 export * from "./leads";
+export * from "./offer_api_keys";

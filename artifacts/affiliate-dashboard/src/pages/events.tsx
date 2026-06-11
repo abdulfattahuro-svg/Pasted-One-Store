@@ -1,24 +1,31 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useListEvents } from "@workspace/api-client-react";
 import { Filter } from "lucide-react";
 
-const APP_LABELS: Record<string, string> = {
-  onetailor: "OneTailor",
-  onesolar: "OneSolar",
-  onesalon: "OneSalon",
-};
-
-const APPS = ["onetailor", "onesolar", "onesalon"];
+type Offer = { id: number; name: string; slug: string };
 
 export default function Events() {
   const [eventType, setEventType] = useState<string>("");
   const [appName, setAppName] = useState<string>("");
+
+  const { data: offers = [] } = useQuery<Offer[]>({
+    queryKey: ["offers-list"],
+    queryFn: async () => {
+      const res = await fetch("/api/products");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
 
   const { data: events, isLoading } = useListEvents({
     eventType: (eventType as "click" | "signup") || undefined,
     appName: appName || undefined,
     limit: 100,
   });
+
+  const offerLabel = (slug: string) =>
+    offers.find(o => o.slug === slug)?.name ?? slug;
 
   return (
     <div className="p-6 space-y-4">
@@ -45,8 +52,12 @@ export default function Events() {
             onChange={e => setAppName(e.target.value)}
             className="text-xs bg-card border border-border rounded px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-primary"
           >
-            <option value="">All Apps</option>
-            {APPS.map(a => <option key={a} value={a}>{APP_LABELS[a]}</option>)}
+            <option value="">All Offers</option>
+            {offers.length === 0 ? (
+              <option disabled value="">No offers available</option>
+            ) : (
+              offers.map(o => <option key={o.slug} value={o.slug}>{o.name}</option>)
+            )}
           </select>
         </div>
       </div>
@@ -56,7 +67,7 @@ export default function Events() {
           <thead>
             <tr className="border-b border-border text-[10px] uppercase tracking-wider text-muted-foreground">
               <th className="text-left px-4 py-2.5">Event</th>
-              <th className="text-left px-4 py-2.5">App</th>
+              <th className="text-left px-4 py-2.5">Offer</th>
               <th className="text-left px-4 py-2.5">Ref Code</th>
               <th className="text-left px-4 py-2.5">User ID</th>
               <th className="text-left px-4 py-2.5">IP Address</th>
@@ -76,7 +87,7 @@ export default function Events() {
                     {e.eventType}
                   </span>
                 </td>
-                <td className="px-4 py-2.5 text-xs">{APP_LABELS[e.appName] ?? e.appName}</td>
+                <td className="px-4 py-2.5 text-xs">{offerLabel(e.appName)}</td>
                 <td className="px-4 py-2.5 font-mono text-[10px]">{e.refCode}</td>
                 <td className="px-4 py-2.5 font-mono text-[10px] text-muted-foreground">{e.userId ?? "—"}</td>
                 <td className="px-4 py-2.5 font-mono text-[10px] text-muted-foreground">{e.ipAddress ?? "—"}</td>

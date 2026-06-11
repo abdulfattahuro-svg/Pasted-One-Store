@@ -494,13 +494,13 @@ function PortalLeadsTab({ affiliate, apps, myLeads, refetchLeads }: {
               />
             </div>
             <div>
-              <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Product</label>
+              <label className="text-[10px] uppercase tracking-wider text-muted-foreground block mb-1">Offer</label>
               <select
                 value={form.productId}
                 onChange={e => setForm(f => ({ ...f, productId: e.target.value }))}
                 className="w-full text-xs bg-background border border-border rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-primary"
               >
-                <option value="">Select a product…</option>
+                <option value="">Select an offer…</option>
                 {apps.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
             </div>
@@ -655,7 +655,7 @@ function PortalDashboard({ affiliate, onLogout }: { affiliate: Affiliate; onLogo
           <div className="flex gap-0">
             {[
               { key: "overview", label: "Overview" },
-              { key: "apps", label: `Products${apps?.length ? ` (${apps.length})` : ""}` },
+              { key: "apps", label: `Offers${apps?.length ? ` (${apps.length})` : ""}` },
               { key: "leads", label: `Leads${myLeads?.length ? ` (${myLeads.length})` : ""}` },
               ...(config?.leaderboardEnabled ? [{ key: "leaderboard", label: "Leaderboard" }] : []),
             ].map(t => (
@@ -755,14 +755,14 @@ function PortalDashboard({ affiliate, onLogout }: { affiliate: Affiliate; onLogo
             <div className="space-y-4">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-xs text-muted-foreground">Each product has its own unique referral link. Share it to earn commissions when people sign up or buy.</p>
+                  <p className="text-xs text-muted-foreground">Each offer has its own unique referral link. Share it to earn commissions when people sign up or buy.</p>
                   <p className="text-[10px] text-muted-foreground mt-1">Your code: <span className="font-mono font-bold text-foreground">{affiliate.refCode}</span> · Links format: <span className="font-mono text-foreground">/product/&#123;slug&#125;?ref={affiliate.refCode}</span></p>
                 </div>
               </div>
               {!apps?.length ? (
                 <div className="text-center py-16 text-muted-foreground">
                   <AppWindow className="w-8 h-8 mx-auto mb-3 opacity-30" />
-                  <p className="text-sm">No products available yet. Check back soon!</p>
+                  <p className="text-sm">No offers available yet. Check back soon!</p>
                 </div>
               ) : (
                 <div className="space-y-3">

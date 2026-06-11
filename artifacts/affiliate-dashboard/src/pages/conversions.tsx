@@ -1,6 +1,9 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useListConversions } from "@workspace/api-client-react";
 import { Clock, Filter } from "lucide-react";
+
+type Offer = { id: number; name: string; slug: string };
 
 function fmtCurrency(n: number) {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 }).format(n);
@@ -12,23 +15,28 @@ const STATUS_COLORS: Record<string, string> = {
   PAID: "bg-primary/10 text-primary",
 };
 
-const APP_LABELS: Record<string, string> = {
-  onetailor: "OneTailor",
-  onesolar: "OneSolar",
-  onesalon: "OneSalon",
-};
-
-const APPS = ["onetailor", "onesolar", "onesalon"];
 const STATUSES = ["HOLD", "PAYABLE", "PAID"];
 
 export default function Conversions() {
   const [status, setStatus] = useState<string>("");
   const [appName, setAppName] = useState<string>("");
 
+  const { data: offers = [] } = useQuery<Offer[]>({
+    queryKey: ["offers-list"],
+    queryFn: async () => {
+      const res = await fetch("/api/products");
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
   const { data: conversions, isLoading } = useListConversions({
     status: (status as "HOLD" | "PAYABLE" | "PAID") || undefined,
     appName: appName || undefined,
   });
+
+  const offerLabel = (slug: string) =>
+    offers.find(o => o.slug === slug)?.name ?? slug;
 
   return (
     <div className="p-6 space-y-4">
@@ -54,8 +62,12 @@ export default function Conversions() {
             onChange={e => setAppName(e.target.value)}
             className="text-xs bg-card border border-border rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-primary"
           >
-            <option value="">All Apps</option>
-            {APPS.map(a => <option key={a} value={a}>{APP_LABELS[a]}</option>)}
+            <option value="">All Offers</option>
+            {offers.length === 0 ? (
+              <option disabled value="">No offers available</option>
+            ) : (
+              offers.map(o => <option key={o.slug} value={o.slug}>{o.name}</option>)
+            )}
           </select>
         </div>
       </div>
@@ -65,7 +77,7 @@ export default function Conversions() {
           <thead>
             <tr className="border-b border-border text-[10px] uppercase tracking-wider text-muted-foreground">
               <th className="text-left px-4 py-2.5">Payment ID</th>
-              <th className="text-left px-4 py-2.5">App</th>
+              <th className="text-left px-4 py-2.5">Offer</th>
               <th className="text-left px-4 py-2.5">User</th>
               <th className="text-right px-4 py-2.5">Amount</th>
               <th className="text-right px-4 py-2.5">Commission</th>
@@ -81,7 +93,7 @@ export default function Conversions() {
             {!isLoading && conversions?.map(c => (
               <tr key={c.id} data-testid={`row-conversion-${c.id}`} className="border-b border-border last:border-0 hover:bg-accent/40 transition-colors">
                 <td className="px-4 py-2.5 font-mono text-[10px] text-muted-foreground">{c.paymentId}</td>
-                <td className="px-4 py-2.5 text-xs">{APP_LABELS[c.appName] ?? c.appName}</td>
+                <td className="px-4 py-2.5 text-xs">{offerLabel(c.appName)}</td>
                 <td className="px-4 py-2.5 font-mono text-[10px] text-muted-foreground">{c.userId}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-xs">{fmtCurrency(c.amount)}</td>
                 <td className="px-4 py-2.5 text-right tabular-nums text-xs font-semibold text-primary">{fmtCurrency(c.commission)}</td>
